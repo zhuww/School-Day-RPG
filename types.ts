@@ -21,7 +21,9 @@ export enum EntityType {
   BED = 'BED',
   TABLE = 'TABLE',
   CHAIR = 'CHAIR',
-  WINDOW = 'WINDOW'
+  WINDOW = 'WINDOW',
+  SHELF = 'SHELF',
+  FRIDGE = 'FRIDGE'
 }
 
 export interface Entity {
@@ -42,6 +44,11 @@ export interface Entity {
   aiTarget?: Point;
   aiTimer?: number;
   behavior?: 'exit' | 'stay' | 'sleep' | 'study'; // New behaviors for dorm
+
+  visual?: {
+    hair?: string;
+    outfit?: string;
+  };
 }
 
 export interface MapData {
@@ -100,4 +107,5 @@ export interface GameState {
   homeworkStatus: 'none' | 'doing' | 'done';
   isNight: boolean;
   isMorningWakeUp: boolean;
+  isMorningQueue: boolean; // Morning queue for crowded stairs
 }
