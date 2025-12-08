@@ -4,7 +4,7 @@ import { GameState, MapData, Entity, EntityType, Point, Friend, Quiz } from './t
 import { generateDialogue, generateSpeech } from './services/geminiService';
 
 // --- CONSTANTS ---
-const PLAYER_SPEED = 3.5;
+const PLAYER_SPEED = 2.0;
 const NPC_SPEED = 1.5;
 const ANIMAL_SPEED = 2.0;
 const CURFEW_TIMEOUT_MS = 20000; 
@@ -121,6 +121,14 @@ const MAPS: Record<string, MapData> = {
     entities: [
       { id: 'portal_out', type: EntityType.PORTAL, pos: { x: 50, y: 400 }, size: 40, color: '#E5E7EB', targetMap: 'playground', targetPos: { x: 700, y: 380 } },
       
+      // Classroom Decorations
+      { id: 'poster_1', type: EntityType.POSTER, pos: { x: 150, y: 20 }, size: 40, color: '#F87171', name: '名人名言' },
+      { id: 'poster_2', type: EntityType.POSTER, pos: { x: 850, y: 20 }, size: 40, color: '#60A5FA', name: '班级公约' },
+      { id: 'win_c1', type: EntityType.WINDOW, pos: { x: 300, y: 10 }, size: 60, color: '#fff' },
+      { id: 'win_c2', type: EntityType.WINDOW, pos: { x: 700, y: 10 }, size: 60, color: '#fff' },
+      { id: 'plant_1', type: EntityType.PLANT, pos: { x: 300, y: 20 }, size: 20, color: '#22C55E', name: '绿植' },
+      { id: 'plant_2', type: EntityType.PLANT, pos: { x: 700, y: 20 }, size: 20, color: '#22C55E', name: '绿植' },
+
       ...Array.from({ length: 20 }).map((_, i) => {
         const row = Math.floor(i / 4);
         const col = i % 4;
@@ -642,14 +650,24 @@ export default function App() {
   };
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (gameState.isSchoolOver && gameState.isNight) return;
+    // BLOCK MOVEMENT IF DIALOGUE IS OPEN OR SCHOOL IS OVER (at night transition)
+    if (gameState.dialogue || (gameState.isSchoolOver && gameState.isNight)) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const clickY = e.clientY - rect.top;
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+
+    // Calculate Camera Offset (Same logic as in render loop)
+    const map = mapRef.current;
+    const camX = Math.max(0, Math.min(map.width - canvas.width, playerRef.current.x - canvas.width / 2));
+    const camY = Math.max(0, Math.min(map.height - canvas.height, playerRef.current.y - canvas.height / 2));
+
+    // Convert Screen Coords to World Coords
+    const clickX = screenX + camX;
+    const clickY = screenY + camY;
 
     const clickedEntity = mapRef.current.entities
       .slice()
@@ -1097,6 +1115,48 @@ export default function App() {
         ctx.fillRect(x - size/2 + 5, y - size + 5, size - 10, size*2 - 10);
         return;
     }
+
+    if (entity.type === EntityType.WINDOW) {
+        ctx.fillStyle = '#EFF6FF';
+        ctx.fillRect(x - size/2, y, size, size/1.5);
+        ctx.fillStyle = '#DBEAFE'; 
+        ctx.fillRect(x - size/2 + 4, y + 4, size - 8, size/1.5 - 8); // Inner glass
+        ctx.strokeStyle = '#60A5FA';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x - size/2, y, size, size/1.5);
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + size/1.5); ctx.stroke();
+        return;
+    }
+
+    if (entity.type === EntityType.POSTER) {
+       ctx.fillStyle = '#FEF9C3'; // Paper color
+       ctx.fillRect(x - size/2, y - size/2, size, size*1.4);
+       ctx.fillStyle = color;
+       ctx.fillRect(x - size/2 + 2, y - size/2 + 2, size - 4, size/2); // Image area
+       // Fake text lines
+       ctx.fillStyle = '#9CA3AF';
+       ctx.fillRect(x - size/2 + 4, y + 5, size - 8, 2);
+       ctx.fillRect(x - size/2 + 4, y + 10, size - 8, 2);
+       return;
+    }
+
+    if (entity.type === EntityType.PLANT) {
+       // Pot
+       ctx.fillStyle = '#B45309';
+       ctx.beginPath();
+       ctx.moveTo(x - 10, y + 10);
+       ctx.lineTo(x + 10, y + 10);
+       ctx.lineTo(x + 8, y + 20);
+       ctx.lineTo(x - 8, y + 20);
+       ctx.fill();
+       // Leaves
+       ctx.fillStyle = '#22C55E';
+       ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI*2); ctx.fill();
+       ctx.beginPath(); ctx.arc(x - 8, y - 5, 6, 0, Math.PI*2); ctx.fill();
+       ctx.beginPath(); ctx.arc(x + 8, y - 5, 6, 0, Math.PI*2); ctx.fill();
+       ctx.beginPath(); ctx.arc(x, y - 10, 6, 0, Math.PI*2); ctx.fill();
+       return;
+    }
   };
 
   const drawPortalHole = (ctx: CanvasRenderingContext2D, entity: Entity) => {
@@ -1225,7 +1285,7 @@ export default function App() {
           else if (entity.type === EntityType.STORE) drawStore(ctx, entity);
           else if (entity.type === EntityType.DORMITORY) drawDormitory(ctx, entity);
           else if (entity.type === EntityType.SWIMMING_POOL) drawPool(ctx, entity);
-          else if (['BED','TABLE','CHAIR','SHELF','FRIDGE','DESK','BACKPACK'].includes(entity.type)) drawFurniture(ctx, entity);
+          else if (['BED','TABLE','CHAIR','SHELF','FRIDGE','DESK','BACKPACK','WINDOW','POSTER','PLANT'].includes(entity.type)) drawFurniture(ctx, entity);
           else if (['DOG','CAT','BIRD'].includes(entity.type)) drawAnimal(ctx, entity);
           else if (entity.id === 'portal_hallway') drawPortalHole(ctx, entity); // Red hole
           else if (entity.type === EntityType.PORTAL) { /* invisible usually */ }
@@ -1338,10 +1398,16 @@ export default function App() {
 
       {/* Dialogue Box */}
       {gameState.dialogue && (
-          <div className="absolute bottom-16 left-1/2 -translate-x-1/2 w-3/4 max-w-lg bg-white/95 border-2 border-slate-800 p-4 rounded-lg shadow-xl animate-fade-in-up">
+          <div 
+            onClick={(e) => {
+                e.stopPropagation();
+                setGameState(prev => ({ ...prev, dialogue: null }));
+            }}
+            className="absolute bottom-16 left-1/2 -translate-x-1/2 w-3/4 max-w-lg bg-white/95 border-2 border-slate-800 p-4 rounded-lg shadow-xl animate-fade-in-up cursor-pointer hover:bg-white"
+          >
               <div className="font-bold text-indigo-700 text-sm mb-1">{gameState.dialogue.speaker}</div>
               <div className="text-slate-800 leading-relaxed">{gameState.dialogue.text}</div>
-              <div className="text-[10px] text-gray-400 mt-2 text-right">点击屏幕继续</div>
+              <div className="text-[10px] text-gray-400 mt-2 text-right">点击对话框继续</div>
           </div>
       )}
     </div>
