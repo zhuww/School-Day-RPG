@@ -23,7 +23,8 @@ export enum EntityType {
   CHAIR = 'CHAIR',
   WINDOW = 'WINDOW',
   SHELF = 'SHELF',
-  FRIDGE = 'FRIDGE'
+  FRIDGE = 'FRIDGE',
+  SWIMMING_POOL = 'SWIMMING_POOL'
 }
 
 export interface Entity {
@@ -34,6 +35,8 @@ export interface Entity {
   size: number;
   color: string;
   name?: string;
+  persona?: string; // New: Fixed personality trait
+  voiceName?: string; // New: Fixed voice for audio
   targetMap?: string; // For portals
   targetPos?: Point;  // For portals
   isOccupied?: boolean; // For desks/chairs

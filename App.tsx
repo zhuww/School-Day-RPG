@@ -15,7 +15,8 @@ const TEACHERS: Record<string, any> = {
       name: '王老师', 
       color: '#FFFFFF', 
       subject: '语文',
-      voice: 'Kore',
+      voice: 'Aoede', // High pitch female
+      persona: '温柔知性，喜欢引用古诗词',
       visual: { hair: 'curly_brown', outfit: 'apron' }
   },
   'Math': { 
@@ -23,7 +24,8 @@ const TEACHERS: Record<string, any> = {
       name: '李老师', 
       color: '#2563EB', 
       subject: '数学',
-      voice: 'Zephyr',
+      voice: 'Kore', // Standard female
+      persona: '严谨认真，注重逻辑',
       visual: { hair: 'long_black', outfit: 'normal' }
   },
   'English': { 
@@ -31,18 +33,32 @@ const TEACHERS: Record<string, any> = {
       name: '张老师', 
       color: '#000000', 
       subject: '英语',
-      voice: 'Kore',
+      voice: 'Zephyr', // Soft female
+      persona: '活泼开朗，喜欢唱歌',
       visual: { hair: 'short_black', outfit: 'skirt' }
   },
   'PE': { 
       id: 'teacher_pe', 
-      name: '李老师', 
+      name: '李老师(体)', 
       color: '#16A34A', 
       subject: '体育',
-      voice: 'Fenrir',
+      voice: 'Fenrir', // Deep male
+      persona: '充满活力，嗓门大，强调健康',
       visual: { hair: 'short_black_male', outfit: 'sport_male' }
   },
 };
+
+const STUDENT_TRAITS = [
+    '吃货，口袋里总有零食',
+    '学霸，喜欢看书',
+    '运动健将，想去打球',
+    '爱说话，知道很多秘密',
+    '害羞，声音很小',
+    '喜欢画画',
+    '调皮，喜欢玩',
+    '热心肠，帮老师做事',
+    '爱睡觉'
+];
 
 const MAPS: Record<string, MapData> = {
   'playground': {
@@ -72,7 +88,9 @@ const MAPS: Record<string, MapData> = {
       { id: 'store_bldg', type: EntityType.STORE, pos: { x: 1175, y: 280 }, size: 0, color: 'transparent' },
       { id: 'portal_store', type: EntityType.PORTAL, pos: { x: 1175, y: 280 }, size: 50, color: 'rgba(0,0,0,0)', targetMap: 'store_interior', targetPos: { x: 300, y: 450 } },
 
-      { id: 'guard', type: EntityType.NPC, subtype: 'adult', pos: { x: 650, y: 1120 }, size: 25, color: '#1F2937', name: '保安叔叔', facing: 'right' },
+      { id: 'pool', type: EntityType.SWIMMING_POOL, pos: { x: 200, y: 900 }, size: 150, color: '#3B82F6', name: '游泳池' },
+
+      { id: 'guard', type: EntityType.NPC, subtype: 'adult', pos: { x: 650, y: 1120 }, size: 25, color: '#1F2937', name: '保安叔叔', facing: 'right', persona: '尽职尽责，关心学生安全', voiceName: 'Charon' }, // Deep male
       
       { id: 'hoop_1', type: EntityType.HOOP, pos: { x: 200, y: 600 }, size: 40, color: '#eee' },
       { id: 'hoop_2', type: EntityType.HOOP, pos: { x: 1200, y: 600 }, size: 40, color: '#eee' },
@@ -82,8 +100,8 @@ const MAPS: Record<string, MapData> = {
       { id: 'bird_1', type: EntityType.BIRD, pos: { x: 400, y: 400 }, size: 10, color: '#60A5FA', name: '小鸟' },
       { id: 'bird_2', type: EntityType.BIRD, pos: { x: 450, y: 420 }, size: 10, color: '#60A5FA', name: '小鸟' },
 
-      { id: 'c1', type: EntityType.NPC, subtype: 'child', pos: { x: 300, y: 800 }, size: 18, color: '#F59E0B', name: '跑步的男生', facing: 'left' },
-      { id: 'c2', type: EntityType.NPC, subtype: 'child', pos: { x: 900, y: 700 }, size: 18, color: '#EC4899', name: '聊天的女生', facing: 'left' },
+      { id: 'c1', type: EntityType.NPC, subtype: 'child', pos: { x: 300, y: 800 }, size: 18, color: '#F59E0B', name: '跑步的男生', facing: 'left', persona: '喜欢跑步', voiceName: 'Puck' },
+      { id: 'c2', type: EntityType.NPC, subtype: 'child', pos: { x: 900, y: 700 }, size: 18, color: '#EC4899', name: '聊天的女生', facing: 'left', persona: '正在讨论动画片', voiceName: 'Puck' },
     ]
   },
   'classroom': {
@@ -140,7 +158,7 @@ const MAPS: Record<string, MapData> = {
       { id: 'door_my_dorm', type: EntityType.PORTAL, pos: { x: 500, y: 50 }, size: 50, color: '#4B2A10', targetMap: 'dorm_room', targetPos: { x: 400, y: 500 } },
       { id: 'ra_desk', type: EntityType.TABLE, pos: { x: 300, y: 250 }, size: 100, color: '#D97706', name: '值班前台' },
       { id: 'ra_chair', type: EntityType.CHAIR, pos: { x: 300, y: 200 }, size: 25, color: '#1F2937', name: '椅子', facing: 'down' },
-      { id: 'ra_npc', type: EntityType.NPC, subtype: 'adult', pos: { x: 300, y: 200 }, size: 25, color: '#BE123C', name: '宿管老师', facing: 'down' }
+      { id: 'ra_npc', type: EntityType.NPC, subtype: 'adult', pos: { x: 300, y: 200 }, size: 25, color: '#BE123C', name: '宿管老师', facing: 'down', persona: '像妈妈一样关心学生的生活', voiceName: 'Zephyr' } // Soft female
     ]
   },
   'dorm_room': {
@@ -189,7 +207,7 @@ const MAPS: Record<string, MapData> = {
     entities: [
       { id: 'portal_exit', type: EntityType.PORTAL, pos: { x: 300, y: 480 }, size: 40, color: '#9CA3AF', targetMap: 'playground', targetPos: { x: 1175, y: 350 } },
       { id: 'counter', type: EntityType.TABLE, pos: { x: 150, y: 300 }, size: 100, color: '#FCD34D', name: '收银台' },
-      { id: 'cashier', type: EntityType.NPC, subtype: 'adult', pos: { x: 150, y: 280 }, size: 25, color: '#EF4444', name: '收银员', facing: 'down' },
+      { id: 'cashier', type: EntityType.NPC, subtype: 'adult', pos: { x: 150, y: 280 }, size: 25, color: '#EF4444', name: '收银员', facing: 'down', persona: '精明但热情，喜欢推荐新零食', voiceName: 'Zephyr' },
       { id: 'shelf_1', type: EntityType.SHELF, pos: { x: 400, y: 150 }, size: 100, color: '#A78BFA', name: '零食货架' },
       { id: 'shelf_2', type: EntityType.SHELF, pos: { x: 400, y: 300 }, size: 100, color: '#F472B6', name: '面包货架' },
       { id: 'fridge_1', type: EntityType.FRIDGE, pos: { x: 150, y: 150 }, size: 80, color: '#60A5FA', name: '饮料柜' }
@@ -200,10 +218,16 @@ const MAPS: Record<string, MapData> = {
 const CLASSROOM_ENTITIES = MAPS['classroom'].entities;
 const COLORS = ['#F87171', '#60A5FA', '#34D399', '#A78BFA', '#FBBF24', '#F472B6'];
 const NAMES = ['小明', '小红', '刚子', '丽丽', '强子', '芳芳', '小军', '娜娜', '涛涛', '静静'];
+const LEADERS = ['芳芳', '丽丽', '娜娜', '静静'];
 
+// Initialize Classroom Students with Personas and Voices
 CLASSROOM_ENTITIES.forEach((e, i) => {
    if (e.type === EntityType.DESK && e.isOccupied) {
        const npcId = `student_${i}`;
+       const trait = STUDENT_TRAITS[i % STUDENT_TRAITS.length]; 
+       // Assign 'Puck' or 'Aoede' (High pitch) for children voices
+       const voice = i % 2 === 0 ? 'Puck' : 'Aoede'; 
+       
        MAPS['classroom'].entities.push({
            id: npcId,
            type: EntityType.NPC,
@@ -212,7 +236,9 @@ CLASSROOM_ENTITIES.forEach((e, i) => {
            size: 18,
            color: COLORS[i % COLORS.length],
            name: NAMES[i % NAMES.length],
-           facing: 'up'
+           facing: 'up',
+           persona: trait,
+           voiceName: voice
        });
    }
 });
@@ -230,6 +256,9 @@ const spawnRoommates = () => {
             { x: 500, y: 300 }, 
         ];
         const spot = targets[i];
+        const trait = STUDENT_TRAITS[(i + 5) % STUDENT_TRAITS.length]; 
+        const voice = i % 2 === 0 ? 'Aoede' : 'Puck';
+
         MAPS['dorm_room'].entities.push({
             id: `roommate_${i}`,
             type: EntityType.NPC,
@@ -239,7 +268,9 @@ const spawnRoommates = () => {
             color: COLORS[i % COLORS.length],
             name: name,
             facing: isSleeping ? 'down' : 'up',
-            behavior: isSleeping ? 'sleep' : 'study'
+            behavior: isSleeping ? 'sleep' : 'study',
+            persona: trait,
+            voiceName: voice
         });
     });
 };
@@ -328,7 +359,9 @@ export default function App() {
             color: teacherInfo.color,
             name: teacherInfo.name,
             facing: 'down',
-            visual: teacherInfo.visual
+            visual: teacherInfo.visual,
+            persona: teacherInfo.persona,
+            voiceName: teacherInfo.voice
         };
 
         if (existingTeacherIndex !== -1) {
@@ -336,8 +369,27 @@ export default function App() {
         } else {
             mapRef.current.entities.push(teacherEntity);
         }
+
+        // PE Class: Classroom Formation - Two Tight Lines
+        if (gameState.currentLesson === 'PE' && gameState.isClassStarted) {
+            const students = mapRef.current.entities.filter(e => e.id.startsWith('student_'));
+            // Remove one student to make space for player
+            const visibleStudents = students.slice(0, 18); 
+            // Hide the 19th student or just don't render them effectively
+            students.forEach((s, i) => {
+                if (i >= 18) { s.pos = {x: 0, y: 0}; return; } // Hide extra
+                // Left Line (x: 450), Right Line (x: 550) - Tight gap
+                if (i % 2 === 0) {
+                    s.pos = { x: 450, y: 200 + i * 20 };
+                    s.facing = 'right';
+                } else {
+                    s.pos = { x: 550, y: 200 + (i-1) * 20 };
+                    s.facing = 'left';
+                }
+            });
+        }
     }
-  }, [gameState.currentLesson, gameState.currentMapId, gameState.isTeacherTransitioning, gameState.isSchoolOver]);
+  }, [gameState.currentLesson, gameState.currentMapId, gameState.isTeacherTransitioning, gameState.isSchoolOver, gameState.isClassStarted]);
 
   useEffect(() => {
       let interval: any;
@@ -388,8 +440,7 @@ export default function App() {
           dialogue: { speaker: '宿管老师', text: text },
           schoolOverTime: null
       }));
-      // Trigger voice for RA
-      generateSpeech(text, 'Kore').then(audio => audio && playAudio(audio));
+      generateSpeech(text, 'Zephyr').then(audio => audio && playAudio(audio));
   };
 
   const checkCollision = (nextPos: Point, map: MapData): boolean => {
@@ -433,6 +484,15 @@ export default function App() {
     }
 
     if (entity.type === EntityType.STORE) return;
+    
+    if (entity.type === EntityType.SWIMMING_POOL) {
+        targetRef.current = null;
+        setGameState(prev => ({
+            ...prev,
+            dialogue: { speaker: '旁白', text: '泳池的水很清凉，在这里游泳真是一种放松。' }
+        }));
+        return;
+    }
 
     if (entity.type === EntityType.SHELF) {
         targetRef.current = null;
@@ -453,28 +513,12 @@ export default function App() {
     }
 
     if (['NPC', 'DOG', 'CAT', 'BIRD'].includes(entity.type)) {
-      if (entity.id === 'cashier') {
-          const text = '你好，一共三元。';
-          targetRef.current = null;
-          setGameState(prev => ({
-            ...prev,
-            dialogue: { speaker: '收银员', text: text }
-        }));
-        generateSpeech(text, 'Kore').then(audio => audio && playAudio(audio));
-        return;
-      }
-
       if (entity.behavior === 'sleep') {
           setGameState(prev => ({ ...prev, dialogue: { speaker: '旁白', text: '她正在睡觉，不要打扰她。' } }));
           return;
       }
-      if (entity.behavior === 'study') {
-          const text = '我在写作业呢，今天的作业好难啊。';
-          setGameState(prev => ({ ...prev, dialogue: { speaker: entity.name || '室友', text: text } }));
-          generateSpeech(text, 'Zephyr').then(audio => audio && playAudio(audio));
-          return;
-      }
-
+      
+      // Face the player
       if (Math.abs(entity.pos.x - playerRef.current.x) > Math.abs(entity.pos.y - playerRef.current.y)) {
          facingRef.current = entity.pos.x > playerRef.current.x ? 'right' : 'left';
       } else {
@@ -483,7 +527,15 @@ export default function App() {
 
       setGameState(prev => ({ ...prev, dialogue: { speaker: entity.name || 'Unknown', text: '...' } }));
       
-      const text = await generateDialogue(entity.id, entity.name || 'NPC', mapRef.current.name, entity.type);
+      // Logic for Teachers Lecturing
+      let isLecture = false;
+      let subject = '';
+      if (entity.id.startsWith('teacher_') && gameState.isClassStarted) {
+          isLecture = true;
+          subject = TEACHERS[gameState.currentLesson]?.subject || '';
+      }
+
+      const text = await generateDialogue(entity.id, entity.name || 'NPC', mapRef.current.name, entity.type, entity.persona, isLecture, subject);
       
       setGameState(prev => {
           let newFriends = prev.friends;
@@ -497,14 +549,11 @@ export default function App() {
           };
       });
 
-      if (entity.type === EntityType.NPC) {
-          let voice = 'Kore';
-          // @ts-ignore
-          if (entity.visual?.outfit === 'sport_male' || entity.id === 'guard') {
-              voice = 'Fenrir'; 
-          } else if (entity.subtype === 'child') {
-              voice = 'Zephyr';
-          }
+      if (['NPC', 'DOG', 'CAT', 'BIRD'].includes(entity.type)) {
+          // Use fixed assigned voice
+          const voice = entity.voiceName || 'Kore';
+          // If dog/cat, text is "WangWang", we can just let TTS read it or skip.
+          // User said "Animals will emit corresponding animal sounds". TTS reading "Wang Wang" is accurate to that description in a browser context without assets.
           generateSpeech(text, voice).then(audioData => {
               if(audioData) playAudio(audioData);
           });
@@ -516,8 +565,10 @@ export default function App() {
 
     if (entity.type === EntityType.DESK && !entity.isOccupied) {
       if (entity.id !== gameState.satAtDeskId) {
-          playerRef.current = { x: entity.pos.x, y: entity.pos.y - 10 };
-          setGameState(prev => ({ ...prev, satAtDeskId: entity.id, dialogue: null }));
+          // Changed position to be BEHIND the desk (visually below it, at y+40)
+          playerRef.current = { x: entity.pos.x, y: entity.pos.y + 40 };
+          setGameState(prev => ({ ...prev, satAtDeskId: entity.id, dialogue: null, facing: 'up' }));
+          facingRef.current = 'up'; // Force facing up (towards podium)
           targetRef.current = null;
       }
       return;
@@ -564,7 +615,30 @@ export default function App() {
           homeworkStatus: 'none',
           isBackpackOpen: false
       }));
-      generateSpeech(text, 'Zephyr').then(audio => audio && playAudio(audio));
+      generateSpeech(text, 'Aoede').then(audio => audio && playAudio(audio));
+  };
+
+  const switchLesson = (lesson: 'Chinese' | 'Math' | 'English' | 'PE') => {
+      setGameState(prev => ({ 
+          ...prev, 
+          currentLesson: lesson, 
+          isBackpackOpen: false,
+          dialogue: { speaker: '旁白', text: `你拿出了${lesson === 'PE' ? '跳绳' : '课本'}，准备上${TEACHERS[lesson].subject}课。` } 
+      }));
+  };
+
+  const handleStartClass = () => {
+      if (gameState.currentLesson === 'PE') {
+           const text = '同学们，大家分成两队！一会去操场集合！';
+           setGameState(prev => ({ 
+               ...prev, 
+               isClassStarted: true,
+               dialogue: { speaker: '李老师(体)', text }
+           }));
+           generateSpeech(text, 'Fenrir').then(a => a && playAudio(a));
+      } else {
+           setGameState(prev => ({ ...prev, isClassStarted: true }));
+      }
   };
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -630,10 +704,61 @@ export default function App() {
 
       walkFrameRef.current += 0.2;
 
+      // PE Check: Classroom "Step into Line" logic
+      if (gameState.currentLesson === 'PE' && gameState.isClassStarted && gameState.currentMapId === 'classroom') {
+          // The last spot in the right line (index 19 in visual logic) is around x:550, y:200 + 18*20 = 560
+          // But visual loop uses specific math.
+          // Let's check proximity to the gap spot.
+          const gapX = 550;
+          const gapY = 200 + 9 * 40; // Approx end of line
+          const dx = playerRef.current.x - gapX;
+          const dy = playerRef.current.y - gapY;
+          // If close to line end, trigger transition
+          if (Math.sqrt(dx*dx + dy*dy) < 60) {
+              mapRef.current = MAPS['playground'];
+              playerRef.current = { x: 700, y: 700 }; // Player joins formation on playground
+              targetRef.current = null;
+              setGameState(prev => ({
+                 ...prev,
+                 currentMapId: 'playground',
+                 playerPos: { x: 700, y: 700 },
+                 targetPos: null,
+                 dialogue: { speaker: '旁白', text: '你加入了队伍，大家一起整齐地走到了操场。' }
+              }));
+              return; // End loop frame
+          }
+      }
+
       if (gameState.currentMapId === 'playground') {
         const npcs = mapRef.current.entities.filter(e => 
             e.type === EntityType.NPC || e.type === EntityType.DOG || e.type === EntityType.BIRD
         );
+
+        // PE Square Formation Logic on Playground
+        if (gameState.currentLesson === 'PE' && gameState.isClassStarted) {
+             const students = mapRef.current.entities.filter(e => e.id.startsWith('student_'));
+             students.forEach((s, i) => {
+                 // 5 columns, 4 rows grid
+                 const col = i % 5;
+                 const row = Math.floor(i / 5);
+                 // Center on basketball court (700, 800 center roughly)
+                 const sx = 550 + col * 70;
+                 const sy = 750 + row * 60;
+                 s.pos = { x: sx, y: sy };
+                 s.facing = 'up'; // Facing teacher
+                 
+                 // Leaders in front row
+                 if (LEADERS.includes(s.name || '')) {
+                     s.pos.y = 700; // Front row override
+                 }
+             });
+             // Teacher at front
+             const teacher = mapRef.current.entities.find(e => e.id === 'teacher_pe');
+             if (teacher) {
+                 teacher.pos = { x: 700, y: 600 };
+                 teacher.facing = 'down';
+             }
+        }
 
         npcs.forEach(npc => {
             if (gameState.currentLesson === 'PE' && gameState.isClassStarted && npc.subtype === 'child') return;
@@ -741,9 +866,59 @@ export default function App() {
 
     ctx.translate(x, y + bounce);
 
-    // Body
+    if (isPlayer) {
+        // Player: Girl with purple skirt and two small bags
+        // Top
+        ctx.fillStyle = '#D8B4FE'; // Lighter purple top
+        ctx.fillRect(-size/2, -size/1.5, size, size/2);
+        
+        // Skirt
+        ctx.fillStyle = '#7E22CE'; // Purple skirt
+        ctx.beginPath();
+        ctx.moveTo(-size/2, -size/6);
+        ctx.lineTo(size/2, -size/6);
+        ctx.lineTo(size/1.2, size/1.2); // Flare out left
+        ctx.lineTo(-size/1.2, size/1.2); // Flare out right
+        ctx.fill();
+
+        // Bags
+        ctx.fillStyle = '#FBCFE8'; // Pink small bags
+        // Left bag
+        ctx.beginPath(); ctx.arc(-size, size/3, size/4, 0, Math.PI*2); ctx.fill();
+        // Right bag
+        ctx.beginPath(); ctx.arc(size, size/3, size/4, 0, Math.PI*2); ctx.fill();
+
+        // Head
+        ctx.fillStyle = '#FCA5A5'; 
+        ctx.beginPath();
+        ctx.arc(0, -size, size/2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Braids (Long black hair)
+        ctx.fillStyle = '#000000';
+        if (facing === 'down' || facing === 'left' || facing === 'right') {
+           ctx.fillRect(-size/2, -size * 1.4, size, size/2); // Bangs
+           ctx.lineWidth = 4; ctx.strokeStyle = '#000000';
+           ctx.beginPath(); ctx.moveTo(-size/2, -size); ctx.quadraticCurveTo(-size, -size/2, -size/1.5, 0); ctx.stroke();
+           ctx.beginPath(); ctx.moveTo(size/2, -size); ctx.quadraticCurveTo(size, -size/2, size/1.5, 0); ctx.stroke();
+           // Face features
+           if (facing === 'down') {
+                ctx.fillStyle = '#000';
+                ctx.fillRect(-5, -size, 2, 2); ctx.fillRect(3, -size, 2, 2); // Eyes
+                ctx.fillRect(-2, -size + 4, 4, 1); // Mouth
+           }
+        } else {
+           // Back of head
+           ctx.beginPath(); ctx.arc(0, -size, size/2 + 1, 0, Math.PI*2); ctx.fill();
+           ctx.fillRect(-size/2, -size, size, size*1.2);
+        }
+
+        ctx.restore();
+        return;
+    }
+
+    // NPC Body
     ctx.fillStyle = drawColor;
-    if (isPlayer) ctx.fillStyle = '#8B5CF6'; // Purple Pajamas
     
     if (entity.visual?.outfit === 'apron') { // Chinese Teacher Apron
         ctx.fillStyle = '#FFFFFF';
@@ -756,25 +931,18 @@ export default function App() {
         ctx.fillRect(-size/2, -size/1.5, size, size);
     }
 
-    // Head
+    // NPC Head
     ctx.fillStyle = '#FCA5A5'; 
     ctx.beginPath();
     ctx.arc(0, -size, size/2, 0, Math.PI * 2);
     ctx.fill();
 
-    // Hair
+    // NPC Hair
     ctx.fillStyle = '#000000';
-    
     if (entity.visual?.hair === 'curly_brown') ctx.fillStyle = '#8B4513';
 
     if (facing === 'down') {
        ctx.fillRect(-size/2, -size * 1.4, size, size/2); // Bangs
-       // Braids
-       if (isPlayer) {
-           ctx.lineWidth = 4; ctx.strokeStyle = '#000000';
-           ctx.beginPath(); ctx.moveTo(-size/2, -size); ctx.quadraticCurveTo(-size, -size/2, -size/1.5, 0); ctx.stroke();
-           ctx.beginPath(); ctx.moveTo(size/2, -size); ctx.quadraticCurveTo(size, -size/2, size/1.5, 0); ctx.stroke();
-       }
        // Face
        ctx.fillStyle = '#000';
        ctx.fillRect(-5, -size, 2, 2); ctx.fillRect(3, -size, 2, 2); // Eyes
@@ -782,16 +950,13 @@ export default function App() {
     } else if (facing === 'up') {
        // Back of head
        ctx.beginPath(); ctx.arc(0, -size, size/2 + 1, 0, Math.PI*2); ctx.fill();
-       if (isPlayer || entity.visual?.hair === 'long_black' || entity.visual?.hair === 'curly_brown') {
+       if (entity.visual?.hair === 'long_black' || entity.visual?.hair === 'curly_brown') {
             // Long hair back
             ctx.fillRect(-size/2, -size, size, size*1.2);
        }
     } else {
        // Side profile
        ctx.fillRect(-size/2, -size*1.4, size, size/2);
-       if (isPlayer) {
-          ctx.beginPath(); ctx.moveTo(0, -size); ctx.lineTo(-size/1.2, 0); ctx.stroke();
-       }
     }
 
     // Jump Rope
@@ -977,6 +1142,32 @@ export default function App() {
       ctx.restore();
   };
 
+  const drawPool = (ctx: CanvasRenderingContext2D, entity: Entity) => {
+      const { x, y, size } = entity.pos as any; // Using Entity props
+      const s = entity.size;
+      ctx.save();
+      ctx.translate(entity.pos.x, entity.pos.y);
+      ctx.fillStyle = '#93C5FD'; // Light blue water
+      ctx.fillRect(-s, -s/2, s*2, s);
+      ctx.strokeStyle = '#1E40AF';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(-s, -s/2, s*2, s);
+      
+      // Ripples
+      const t = Date.now() / 500;
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(Math.sin(t)*20, Math.cos(t)*10, 10, 0, Math.PI*2);
+      ctx.stroke();
+      
+      ctx.fillStyle = '#1E3A8A';
+      ctx.font = '14px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(entity.name || '泳池', 0, 0);
+      ctx.restore();
+  };
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -1033,6 +1224,7 @@ export default function App() {
           if (entity.type === EntityType.BUILDING) drawBuilding(ctx, entity);
           else if (entity.type === EntityType.STORE) drawStore(ctx, entity);
           else if (entity.type === EntityType.DORMITORY) drawDormitory(ctx, entity);
+          else if (entity.type === EntityType.SWIMMING_POOL) drawPool(ctx, entity);
           else if (['BED','TABLE','CHAIR','SHELF','FRIDGE','DESK','BACKPACK'].includes(entity.type)) drawFurniture(ctx, entity);
           else if (['DOG','CAT','BIRD'].includes(entity.type)) drawAnimal(ctx, entity);
           else if (entity.id === 'portal_hallway') drawPortalHole(ctx, entity); // Red hole
@@ -1070,14 +1262,33 @@ export default function App() {
       
       {/* UI Overlay */}
       <div className="absolute top-4 left-4 bg-white/90 p-2 rounded shadow border border-slate-700">
-         <div className="text-sm font-bold">{gameState.currentLesson} Class</div>
+         <div className="text-sm font-bold text-red-600">{TEACHERS[gameState.currentLesson]?.subject || '课间'}</div>
          {gameState.isClassStarted && <div className="text-xs text-green-600">正在上课</div>}
          {gameState.isSchoolOver && <div className="text-xs text-red-600">放学了</div>}
       </div>
 
       {gameState.isClassStarted && (
           <button 
-             onClick={() => setGameState(prev => ({ ...prev, isClassStarted: false, isSchoolOver: prev.currentLesson === 'PE' }))}
+             onClick={() => {
+                const LESSON_ORDER: ('Chinese' | 'Math' | 'English' | 'PE')[] = ['Chinese', 'Math', 'English', 'PE'];
+                const nextIdx = LESSON_ORDER.indexOf(gameState.currentLesson) + 1;
+                let nextLesson = gameState.currentLesson;
+                let schoolOver = false;
+                
+                if (nextIdx < LESSON_ORDER.length) {
+                    nextLesson = LESSON_ORDER[nextIdx];
+                } else {
+                    schoolOver = true;
+                }
+
+                setGameState(prev => ({ 
+                    ...prev, 
+                    isClassStarted: false, 
+                    currentLesson: nextLesson,
+                    isSchoolOver: schoolOver,
+                    isLiningUp: false
+                }))
+             }}
              className="absolute bottom-4 right-4 bg-red-500 text-white px-4 py-2 rounded shadow hover:bg-red-600 font-bold"
           >
              下课
@@ -1087,21 +1298,21 @@ export default function App() {
       {/* Backpack Modal */}
       {gameState.isBackpackOpen && (
           <div className="absolute top-20 right-4 bg-white p-4 rounded shadow-lg border border-pink-300 w-48">
-              <h3 className="font-bold text-pink-600 mb-2 border-b">我的书包</h3>
+              <h3 className="font-bold text-pink-600 mb-2 border-b">我的书包 (选择课程)</h3>
               <div className="space-y-2">
-                  <div className="p-2 bg-red-100 rounded text-sm cursor-pointer hover:bg-red-200">语文课本</div>
-                  <div className="p-2 bg-blue-100 rounded text-sm cursor-pointer hover:bg-blue-200">数学课本</div>
-                  <div className="p-2 bg-green-100 rounded text-sm cursor-pointer hover:bg-green-200">英语课本</div>
-                  <div className="p-2 bg-yellow-100 rounded text-sm cursor-pointer hover:bg-yellow-200">跳绳</div>
+                  <div onClick={() => switchLesson('Chinese')} className="p-2 bg-red-100 rounded text-sm cursor-pointer hover:bg-red-200">语文课本 (上语文)</div>
+                  <div onClick={() => switchLesson('Math')} className="p-2 bg-blue-100 rounded text-sm cursor-pointer hover:bg-blue-200">数学课本 (上数学)</div>
+                  <div onClick={() => switchLesson('English')} className="p-2 bg-green-100 rounded text-sm cursor-pointer hover:bg-green-200">英语课本 (上英语)</div>
+                  <div onClick={() => switchLesson('PE')} className="p-2 bg-yellow-100 rounded text-sm cursor-pointer hover:bg-yellow-200">跳绳 (上体育)</div>
+                  
                   {gameState.currentMapId === 'dorm_room' && (
                       <div 
                          onClick={() => {
                              setGameState(prev => ({ ...prev, isBackpackOpen: false, dialogue: { speaker: '旁白', text: '开始写作业...' } }));
-                             // Teleport to chair
                              playerRef.current = { x: 400, y: 380 };
                              facingRef.current = 'up';
                          }}
-                         className="p-2 bg-purple-100 rounded text-sm cursor-pointer hover:bg-purple-200 font-bold"
+                         className="p-2 bg-purple-100 rounded text-sm cursor-pointer hover:bg-purple-200 font-bold border-t mt-2"
                       >
                           写作业
                       </div>
@@ -1114,7 +1325,7 @@ export default function App() {
       <div className="absolute bottom-4 left-4 flex gap-2">
            {!gameState.isClassStarted && gameState.satAtDeskId && !gameState.isSchoolOver && (
                <button 
-                 onClick={() => setGameState(prev => ({ ...prev, isClassStarted: true }))}
+                 onClick={handleStartClass}
                  className="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 animate-bounce"
                >
                    上课
