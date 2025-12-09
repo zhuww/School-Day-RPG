@@ -108,6 +108,7 @@ export interface GameState {
   isSchoolOver: boolean;
   
   // Dorm / Night Cycle
+  gameTime: number; // Minutes from midnight (e.g. 420 = 7:00 AM)
   schoolOverTime: number | null; // Timestamp when school ended
   homeworkStatus: 'none' | 'doing' | 'done';
   isNight: boolean;

@@ -2,6 +2,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { GameState, MapData, Entity, EntityType, Point, Friend, Quiz } from './types';
 import { generateDialogue, generateSpeech } from './services/geminiService';
+import GameClock from './components/GameClock';
 
 // --- CONSTANTS ---
 const PLAYER_SPEED = 2.0;
@@ -291,6 +292,8 @@ spawnRoommates();
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const requestRef = useRef<number>();
+  const animationFrameRef = useRef<number>();
   
   const [gameState, setGameState] = useState<GameState>({
     currentMapId: 'playground',
@@ -315,13 +318,21 @@ export default function App() {
     isNight: false,
     isMorningWakeUp: false,
     isMorningQueue: false,
+    gameTime: 420, // 7:00 AM (420 minutes)
   });
   
+  // Use a Ref to hold the latest game state to avoid restarting the render loop
+  const gameStateRef = useRef(gameState);
+  
+  // Keep the Ref in sync with state
+  useEffect(() => {
+    gameStateRef.current = gameState;
+  }, [gameState]);
+
   const playerRef = useRef(gameState.playerPos);
   const targetRef = useRef<Point | null>(null);
   const mapRef = useRef(MAPS['playground']);
   const walkFrameRef = useRef(0);
-  const animationFrameRef = useRef<number>(0);
   const facingRef = useRef<'left' | 'right' | 'up' | 'down'>('right');
   const npcStateRef = useRef<Map<string, { target: Point | null, timer: number, behavior?: 'exit' | 'stay' }>>(new Map());
 
@@ -356,52 +367,46 @@ export default function App() {
           console.error("Audio playback failed", e);
       }
   };
-  
+
+  // --- TIME CYCLE ---
   useEffect(() => {
-    if (gameState.currentMapId === 'classroom' && !gameState.isTeacherTransitioning && !gameState.isSchoolOver) {
-        const teacherInfo = TEACHERS[gameState.currentLesson];
-        const existingTeacherIndex = mapRef.current.entities.findIndex(e => e.id.startsWith('teacher_'));
+    const timer = setInterval(() => {
+      setGameState(prev => {
+        const newTime = prev.gameTime + 5; // +5 mins every real second
         
-        const teacherEntity: Entity = {
-            id: teacherInfo.id,
-            type: EntityType.NPC,
-            subtype: 'adult',
-            pos: { x: 500, y: 100 }, 
-            size: 25,
-            color: teacherInfo.color,
-            name: teacherInfo.name,
-            facing: 'down',
-            visual: teacherInfo.visual,
-            persona: teacherInfo.persona,
-            voiceName: teacherInfo.voice
-        };
-
-        if (existingTeacherIndex !== -1) {
-            mapRef.current.entities[existingTeacherIndex] = teacherEntity;
-        } else {
-            mapRef.current.entities.push(teacherEntity);
-        }
-
-        // PE Class: Classroom Formation - Two Tight Lines
-        if (gameState.currentLesson === 'PE' && gameState.isClassStarted) {
-            const students = mapRef.current.entities.filter(e => e.id.startsWith('student_'));
-            // Remove one student to make space for player
-            const visibleStudents = students.slice(0, 18); 
-            // Hide the 19th student or just don't render them effectively
-            students.forEach((s, i) => {
-                if (i >= 18) { s.pos = {x: 0, y: 0}; return; } // Hide extra
-                // Left Line (x: 450), Right Line (x: 550) - Tight gap
-                if (i % 2 === 0) {
-                    s.pos = { x: 450, y: 200 + i * 20 };
-                    s.facing = 'right';
-                } else {
-                    s.pos = { x: 550, y: 200 + (i-1) * 20 };
-                    s.facing = 'left';
+        // Check Night (20:00 = 1200 mins)
+        const isNightTime = newTime >= 1200 || newTime < 420; // 8 PM - 7 AM
+        
+        // Behavior Changes
+        if (isNightTime && !prev.isNight) {
+            // Transition to Night
+            MAPS['dorm_room'].entities.forEach(e => {
+                if (e.id.startsWith('roommate_')) {
+                    e.behavior = 'sleep';
+                    e.facing = 'down';
                 }
             });
+            return { 
+                ...prev, 
+                gameTime: newTime, 
+                isNight: true, 
+                dialogue: { speaker: '旁白', text: '天黑了，该回宿舍睡觉了...' } 
+            };
+        } else if (!isNightTime && prev.isNight) {
+             // Transition to Day (handled by sleep usually, but just in case)
+             return { ...prev, gameTime: newTime, isNight: false };
         }
-    }
-  }, [gameState.currentLesson, gameState.currentMapId, gameState.isTeacherTransitioning, gameState.isSchoolOver, gameState.isClassStarted]);
+
+        // Auto Curfew Warning (22:00 = 1320 mins)
+        if (newTime === 1320 && !['dorm_room', 'dorm_hallway'].includes(prev.currentMapId)) {
+             handleRAEscort();
+        }
+
+        return { ...prev, gameTime: newTime };
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
       let interval: any;
@@ -539,7 +544,6 @@ export default function App() {
 
       setGameState(prev => ({ ...prev, dialogue: { speaker: entity.name || 'Unknown', text: '...' } }));
       
-      // Logic for Teachers Lecturing
       let isLecture = false;
       let subject = '';
       if (entity.id.startsWith('teacher_') && gameState.isClassStarted) {
@@ -562,10 +566,7 @@ export default function App() {
       });
 
       if (['NPC', 'DOG', 'CAT', 'BIRD'].includes(entity.type)) {
-          // Use fixed assigned voice
           const voice = entity.voiceName || 'Kore';
-          // If dog/cat, text is "WangWang", we can just let TTS read it or skip.
-          // User said "Animals will emit corresponding animal sounds". TTS reading "Wang Wang" is accurate to that description in a browser context without assets.
           generateSpeech(text, voice).then(audioData => {
               if(audioData) playAudio(audioData);
           });
@@ -577,10 +578,9 @@ export default function App() {
 
     if (entity.type === EntityType.DESK && !entity.isOccupied) {
       if (entity.id !== gameState.satAtDeskId) {
-          // Changed position to be BEHIND the desk (visually below it, at y+40)
           playerRef.current = { x: entity.pos.x, y: entity.pos.y + 40 };
           setGameState(prev => ({ ...prev, satAtDeskId: entity.id, dialogue: null, facing: 'up' }));
-          facingRef.current = 'up'; // Force facing up (towards podium)
+          facingRef.current = 'up'; 
           targetRef.current = null;
       }
       return;
@@ -604,7 +604,11 @@ export default function App() {
 
   const handleSleep = () => {
       targetRef.current = null;
-      setGameState(prev => ({ ...prev, isNight: true, dialogue: { speaker: '旁白', text: '你躺在床上，闭上了眼睛...' } }));
+      setGameState(prev => ({ 
+          ...prev, 
+          isNight: true, // Force night overlay for effect
+          dialogue: { speaker: '旁白', text: '你躺在床上，闭上了眼睛...' } 
+      }));
       setTimeout(() => {
           startNewDay();
       }, 4000);
@@ -615,6 +619,7 @@ export default function App() {
       const text = '快起床！楼梯好挤啊，我们要排队走！';
       setGameState(prev => ({
           ...prev,
+          gameTime: 420, // Reset to 7:00 AM
           isNight: false,
           currentLesson: 'Chinese',
           isClassStarted: false,
@@ -640,6 +645,34 @@ export default function App() {
   };
 
   const handleStartClass = () => {
+      const teacherInfo = TEACHERS[gameState.currentLesson];
+      const teacherId = teacherInfo.id;
+      const doorPos = { x: 50, y: 400 };
+      const podiumPos = { x: 500, y: 130 }; // Adjusted to stay in front of wall
+
+      // Add teacher if not exists
+      let teacher = MAPS['classroom'].entities.find(e => e.id === teacherId);
+      if (!teacher) {
+          teacher = {
+            id: teacherId,
+            type: EntityType.NPC,
+            subtype: 'adult',
+            pos: doorPos, 
+            size: 25,
+            color: teacherInfo.color,
+            name: teacherInfo.name,
+            facing: 'right',
+            visual: teacherInfo.visual,
+            persona: teacherInfo.persona,
+            voiceName: teacherInfo.voice
+        };
+        MAPS['classroom'].entities.push(teacher);
+      } else {
+        teacher.pos = doorPos; 
+      }
+
+      npcStateRef.current.set(teacherId, { target: podiumPos, timer: 0, behavior: 'stay' });
+
       if (gameState.currentLesson === 'PE') {
            const text = '同学们，大家分成两队！一会去操场集合！';
            setGameState(prev => ({ 
@@ -653,8 +686,40 @@ export default function App() {
       }
   };
 
+  const handleDismissClass = () => {
+     const teacherId = TEACHERS[gameState.currentLesson]?.id;
+     if (teacherId) {
+         setGameState(prev => ({ ...prev, isTeacherTransitioning: true }));
+         const doorPos = { x: 50, y: 400 };
+         npcStateRef.current.set(teacherId, { target: doorPos, timer: 0, behavior: 'exit' });
+     } else {
+         advanceLesson();
+     }
+  };
+
+  const advanceLesson = () => {
+    const LESSON_ORDER: ('Chinese' | 'Math' | 'English' | 'PE')[] = ['Chinese', 'Math', 'English', 'PE'];
+    const nextIdx = LESSON_ORDER.indexOf(gameState.currentLesson) + 1;
+    let nextLesson = gameState.currentLesson;
+    let schoolOver = false;
+    
+    if (nextIdx < LESSON_ORDER.length) {
+        nextLesson = LESSON_ORDER[nextIdx];
+    } else {
+        schoolOver = true;
+    }
+
+    setGameState(prev => ({ 
+        ...prev, 
+        isClassStarted: false, 
+        currentLesson: nextLesson,
+        isSchoolOver: schoolOver,
+        isLiningUp: false,
+        isTeacherTransitioning: false
+    }));
+  };
+
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    // BLOCK MOVEMENT IF DIALOGUE IS OPEN OR SCHOOL IS OVER (at night transition)
     if (gameState.dialogue || (gameState.isSchoolOver && gameState.isNight)) return;
 
     const canvas = canvasRef.current;
@@ -664,12 +729,10 @@ export default function App() {
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
 
-    // Calculate Camera Offset (Same logic as in render loop)
     const map = mapRef.current;
     const camX = Math.max(0, Math.min(map.width - canvas.width, playerRef.current.x - canvas.width / 2));
     const camY = Math.max(0, Math.min(map.height - canvas.height, playerRef.current.y - canvas.height / 2));
 
-    // Convert Screen Coords to World Coords
     const clickX = screenX + camX;
     const clickY = screenY + camY;
 
@@ -695,6 +758,9 @@ export default function App() {
   // --- GAME LOOP ---
   useEffect(() => {
     const loop = () => {
+      // Use ref-based state to access latest values inside the animation loop
+      const currentState = gameStateRef.current;
+      
       if (targetRef.current) {
         const dx = targetRef.current.x - playerRef.current.x;
         const dy = targetRef.current.y - playerRef.current.y;
@@ -727,18 +793,14 @@ export default function App() {
       walkFrameRef.current += 0.2;
 
       // PE Check: Classroom "Step into Line" logic
-      if (gameState.currentLesson === 'PE' && gameState.isClassStarted && gameState.currentMapId === 'classroom') {
-          // The last spot in the right line (index 19 in visual logic) is around x:550, y:200 + 18*20 = 560
-          // But visual loop uses specific math.
-          // Let's check proximity to the gap spot.
+      if (currentState.currentLesson === 'PE' && currentState.isClassStarted && currentState.currentMapId === 'classroom') {
           const gapX = 550;
-          const gapY = 200 + 9 * 40; // Approx end of line
+          const gapY = 560; 
           const dx = playerRef.current.x - gapX;
           const dy = playerRef.current.y - gapY;
-          // If close to line end, trigger transition
           if (Math.sqrt(dx*dx + dy*dy) < 60) {
               mapRef.current = MAPS['playground'];
-              playerRef.current = { x: 700, y: 700 }; // Player joins formation on playground
+              playerRef.current = { x: 700, y: 700 }; 
               targetRef.current = null;
               setGameState(prev => ({
                  ...prev,
@@ -747,34 +809,28 @@ export default function App() {
                  targetPos: null,
                  dialogue: { speaker: '旁白', text: '你加入了队伍，大家一起整齐地走到了操场。' }
               }));
-              return; // End loop frame
+              return; 
           }
       }
 
-      if (gameState.currentMapId === 'playground') {
+      // NPC Movement Logic
+      if (currentState.currentMapId === 'playground' || currentState.currentMapId === 'classroom') {
         const npcs = mapRef.current.entities.filter(e => 
             e.type === EntityType.NPC || e.type === EntityType.DOG || e.type === EntityType.BIRD
         );
 
-        // PE Square Formation Logic on Playground
-        if (gameState.currentLesson === 'PE' && gameState.isClassStarted) {
+        // PE Square Formation Logic
+        if (currentState.currentLesson === 'PE' && currentState.isClassStarted && currentState.currentMapId === 'playground') {
              const students = mapRef.current.entities.filter(e => e.id.startsWith('student_'));
              students.forEach((s, i) => {
-                 // 5 columns, 4 rows grid
                  const col = i % 5;
                  const row = Math.floor(i / 5);
-                 // Center on basketball court (700, 800 center roughly)
                  const sx = 550 + col * 70;
                  const sy = 750 + row * 60;
                  s.pos = { x: sx, y: sy };
-                 s.facing = 'up'; // Facing teacher
-                 
-                 // Leaders in front row
-                 if (LEADERS.includes(s.name || '')) {
-                     s.pos.y = 700; // Front row override
-                 }
+                 s.facing = 'up'; 
+                 if (LEADERS.includes(s.name || '')) s.pos.y = 700;
              });
-             // Teacher at front
              const teacher = mapRef.current.entities.find(e => e.id === 'teacher_pe');
              if (teacher) {
                  teacher.pos = { x: 700, y: 600 };
@@ -782,22 +838,36 @@ export default function App() {
              }
         }
 
+        // PE Classroom Formation Logic
+        if (currentState.currentLesson === 'PE' && currentState.isClassStarted && currentState.currentMapId === 'classroom') {
+            const students = mapRef.current.entities.filter(e => e.id.startsWith('student_'));
+            students.forEach((s, i) => {
+                if (i >= 18) { s.pos = {x: 0, y: 0}; return; }
+                if (i % 2 === 0) {
+                    s.pos = { x: 450, y: 200 + i * 20 };
+                    s.facing = 'right';
+                } else {
+                    s.pos = { x: 550, y: 200 + (i-1) * 20 };
+                    s.facing = 'left';
+                }
+            });
+        }
+
         npcs.forEach(npc => {
-            if (gameState.currentLesson === 'PE' && gameState.isClassStarted && npc.subtype === 'child') return;
+            if ((currentState.isClassStarted && npc.subtype === 'child')) return;
 
             let state = npcStateRef.current.get(npc.id) || { target: null, timer: Math.random() * 100, behavior: 'stay' };
             
-            if (gameState.isSchoolOver && npc.subtype === 'child' && state.behavior === 'stay') {
+            if (currentState.isSchoolOver && npc.subtype === 'child' && state.behavior === 'stay') {
                  if (Math.random() < 0.005) {
                      state.behavior = 'exit';
                  }
             }
-
-            if (state.behavior === 'exit') {
+            if (state.behavior === 'exit' && currentState.currentMapId === 'playground') {
                 state.target = { x: 700, y: 1200 };
             }
 
-            if (!state.target && state.timer <= 0) {
+            if (!state.target && state.timer <= 0 && currentState.currentMapId === 'playground' && !currentState.isNight) {
                  const rX = Math.random() * mapRef.current.width;
                  const rY = Math.random() * mapRef.current.height;
                  if (rX > 50 && rX < 1350 && rY > 50 && rY < 1150 && !checkCollision({x: rX, y:rY}, mapRef.current)) {
@@ -821,8 +891,18 @@ export default function App() {
                 } else {
                     npc.pos = state.target;
                     state.target = null;
+                    
+                    if (state.behavior === 'stay' && npc.id.startsWith('teacher_')) {
+                        npc.facing = 'down'; // Face class when arriving at podium
+                    }
+
                     if (state.behavior === 'exit') {
-                        mapRef.current.entities = mapRef.current.entities.filter(e => e.id !== npc.id);
+                        if (currentState.currentMapId === 'playground') {
+                            mapRef.current.entities = mapRef.current.entities.filter(e => e.id !== npc.id);
+                        } else if (currentState.isTeacherTransitioning && npc.id.startsWith('teacher_')) {
+                             mapRef.current.entities = mapRef.current.entities.filter(e => e.id !== npc.id);
+                             setTimeout(() => advanceLesson(), 0);
+                        }
                     }
                 }
             }
@@ -832,213 +912,302 @@ export default function App() {
 
       animationFrameRef.current = requestAnimationFrame(loop);
     };
+    
+    // Start game loop
     animationFrameRef.current = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(animationFrameRef.current);
-  }, [gameState.currentMapId, gameState.isClassStarted, gameState.currentLesson, gameState.isSchoolOver]);
+    
+    // Cleanup game loop
+    return () => {
+        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    };
+  }, []); // Run once on mount! Dependencies are handled via refs.
 
   const drawWall = (ctx: CanvasRenderingContext2D, wall: {x:number, y:number, w:number, h:number}, mapId: string) => {
-      ctx.fillStyle = mapId === 'classroom' ? '#9CA3AF' : '#4B5563';
-      ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
-      ctx.strokeStyle = 'rgba(0,0,0,0.2)';
-      ctx.lineWidth = 2;
+      ctx.fillStyle = mapId === 'classroom' ? '#D1D5DB' : '#6B7280';
+      ctx.beginPath();
+      ctx.rect(wall.x, wall.y, wall.w, wall.h);
+      ctx.fill();
+      // Brick Texture
+      ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+      ctx.lineWidth = 1;
+      for(let y=wall.y; y<wall.y+wall.h; y+=10) {
+          ctx.beginPath(); ctx.moveTo(wall.x, y); ctx.lineTo(wall.x+wall.w, y); ctx.stroke();
+      }
+      ctx.strokeStyle = '#1F2937';
+      ctx.lineWidth = 3;
       ctx.strokeRect(wall.x, wall.y, wall.w, wall.h);
   };
   
   const drawSprite = (ctx: CanvasRenderingContext2D, entity: Entity, isPlayer: boolean = false) => {
     const { x, y } = entity.pos;
     const { size, color, facing } = entity;
-    const bounce = (isPlayer || entity.aiState === 'moving') ? Math.sin(walkFrameRef.current) * 3 : 0;
+    const isMoving = isPlayer ? gameStateRef.current.isMoving : (entity.aiState === 'moving' || npcStateRef.current.get(entity.id)?.target);
+    const bounce = isMoving ? Math.sin(walkFrameRef.current) * 3 : 0;
     
     ctx.save();
-    
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
-    ctx.beginPath();
-    ctx.ellipse(x, y + size/2, size/1.5, size/4, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    const isDoingGymnastics = gameState.currentLesson === 'PE' && gameState.isClassStarted && gameState.currentMapId === 'playground';
-    const isInFormation = x > 200 && x < 1200 && y > 600 && y < 900;
-    const shouldAnimateGym = isDoingGymnastics && (isInFormation || !isPlayer);
-
-    let drawColor = color;
-    if (shouldAnimateGym) drawColor = '#2563EB'; // Blue uniform
-
-    if (shouldAnimateGym) {
-        const gymPhase = Math.sin(Date.now() / 200);
-        ctx.translate(x, y + bounce);
-        
-        // Jumping Jack Arms
-        ctx.fillStyle = drawColor;
-        ctx.fillRect(-size/2, -size/1.5, size, size); // Body
-        
-        ctx.strokeStyle = drawColor;
-        ctx.lineWidth = 4;
-        const armAngle = gymPhase > 0 ? Math.PI/4 : -Math.PI/1.5;
-        // Left Arm
-        ctx.beginPath(); ctx.moveTo(-size/2, -size/2); ctx.lineTo(-size/2 - Math.cos(armAngle)*15, -size/2 - Math.sin(armAngle)*15); ctx.stroke();
-        // Right Arm
-        ctx.beginPath(); ctx.moveTo(size/2, -size/2); ctx.lineTo(size/2 + Math.cos(armAngle)*15, -size/2 - Math.sin(armAngle)*15); ctx.stroke();
-
-        // Head
-        ctx.fillStyle = '#FCA5A5';
-        ctx.beginPath(); ctx.arc(0, -size, size/2, 0, Math.PI*2); ctx.fill();
-        ctx.restore();
-        return;
-    }
-
     ctx.translate(x, y + bounce);
 
-    if (isPlayer) {
-        // Player: Girl with purple skirt and two small bags
-        // Top
-        ctx.fillStyle = '#D8B4FE'; // Lighter purple top
-        ctx.fillRect(-size/2, -size/1.5, size, size/2);
-        
-        // Skirt
-        ctx.fillStyle = '#7E22CE'; // Purple skirt
-        ctx.beginPath();
-        ctx.moveTo(-size/2, -size/6);
-        ctx.lineTo(size/2, -size/6);
-        ctx.lineTo(size/1.2, size/1.2); // Flare out left
-        ctx.lineTo(-size/1.2, size/1.2); // Flare out right
-        ctx.fill();
+    // Style Settings
+    ctx.shadowColor = 'rgba(0,0,0,0.2)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetY = 2;
 
-        // Bags
-        ctx.fillStyle = '#FBCFE8'; // Pink small bags
-        // Left bag
-        ctx.beginPath(); ctx.arc(-size, size/3, size/4, 0, Math.PI*2); ctx.fill();
-        // Right bag
-        ctx.beginPath(); ctx.arc(size, size/3, size/4, 0, Math.PI*2); ctx.fill();
+    const currentSt = gameStateRef.current;
+    const isDoingGymnastics = currentSt.currentLesson === 'PE' && currentSt.isClassStarted && currentSt.currentMapId === 'playground';
+    const isInFormation = x > 200 && x < 1200 && y > 600 && y < 900;
+    const shouldAnimateGym = isDoingGymnastics && (isInFormation || !isPlayer);
+    let drawColor = color;
+    if (shouldAnimateGym) drawColor = '#3B82F6'; // Tracksuit blue
 
-        // Head
-        ctx.fillStyle = '#FCA5A5'; 
-        ctx.beginPath();
-        ctx.arc(0, -size, size/2, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Braids (Long black hair)
-        ctx.fillStyle = '#000000';
-        if (facing === 'down' || facing === 'left' || facing === 'right') {
-           ctx.fillRect(-size/2, -size * 1.4, size, size/2); // Bangs
-           ctx.lineWidth = 4; ctx.strokeStyle = '#000000';
-           ctx.beginPath(); ctx.moveTo(-size/2, -size); ctx.quadraticCurveTo(-size, -size/2, -size/1.5, 0); ctx.stroke();
-           ctx.beginPath(); ctx.moveTo(size/2, -size); ctx.quadraticCurveTo(size, -size/2, size/1.5, 0); ctx.stroke();
-           // Face features
-           if (facing === 'down') {
-                ctx.fillStyle = '#000';
-                ctx.fillRect(-5, -size, 2, 2); ctx.fillRect(3, -size, 2, 2); // Eyes
-                ctx.fillRect(-2, -size + 4, 4, 1); // Mouth
-           }
-        } else {
-           // Back of head
-           ctx.beginPath(); ctx.arc(0, -size, size/2 + 1, 0, Math.PI*2); ctx.fill();
-           ctx.fillRect(-size/2, -size, size, size*1.2);
-        }
-
-        ctx.restore();
-        return;
-    }
-
-    // NPC Body
-    ctx.fillStyle = drawColor;
+    const legSwing = isMoving ? Math.sin(walkFrameRef.current * 2) * 5 : 0;
     
-    if (entity.visual?.outfit === 'apron') { // Chinese Teacher Apron
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(-size/2, -size/1.5, size, size); 
-        ctx.fillStyle = '#000000'; // Black Apron
-        ctx.fillRect(-size/2 + 2, -size/1.5 + 5, size - 4, size - 5);
-    } else if (entity.subtype === 'adult') {
-        ctx.fillRect(-size/1.8, -size/1.2, size*1.1, size*1.5); // Taller
-    } else {
-        ctx.fillRect(-size/2, -size/1.5, size, size);
-    }
-
-    // NPC Head
-    ctx.fillStyle = '#FCA5A5'; 
-    ctx.beginPath();
-    ctx.arc(0, -size, size/2, 0, Math.PI * 2);
+    // --- LEGS (Volumetric) ---
+    ctx.fillStyle = '#1F2937'; // Dark pants/shoes
+    // Left Leg
+    ctx.beginPath(); 
+    ctx.roundRect(-size/2.5, size/2, size/3.5, size/1.5 + legSwing, 5); 
+    ctx.fill();
+    // Right Leg
+    ctx.beginPath(); 
+    ctx.roundRect(size/8, size/2, size/3.5, size/1.5 - legSwing, 5);
     ctx.fill();
 
-    // NPC Hair
-    ctx.fillStyle = '#000000';
-    if (entity.visual?.hair === 'curly_brown') ctx.fillStyle = '#8B4513';
-
-    if (facing === 'down') {
-       ctx.fillRect(-size/2, -size * 1.4, size, size/2); // Bangs
-       // Face
-       ctx.fillStyle = '#000';
-       ctx.fillRect(-5, -size, 2, 2); ctx.fillRect(3, -size, 2, 2); // Eyes
-       ctx.fillRect(-2, -size + 4, 4, 1); // Mouth
-    } else if (facing === 'up') {
-       // Back of head
-       ctx.beginPath(); ctx.arc(0, -size, size/2 + 1, 0, Math.PI*2); ctx.fill();
-       if (entity.visual?.hair === 'long_black' || entity.visual?.hair === 'curly_brown') {
-            // Long hair back
-            ctx.fillRect(-size/2, -size, size, size*1.2);
-       }
+    // --- ARMS (Volumetric) ---
+    const armSwing = isMoving ? Math.cos(walkFrameRef.current * 2) * 5 : 0;
+    if (shouldAnimateGym) {
+        // Gymnastics Arms
+        const gymPhase = Math.sin(Date.now() / 200);
+        const armAngle = gymPhase > 0 ? Math.PI/4 : -Math.PI/1.5;
+        
+        ctx.strokeStyle = drawColor;
+        ctx.lineWidth = 6;
+        ctx.lineCap = 'round';
+        ctx.beginPath(); 
+        ctx.moveTo(-size/2, -size/4); 
+        ctx.lineTo(-size/2 - Math.cos(armAngle)*15, -size/4 - Math.sin(armAngle)*15); 
+        ctx.stroke();
+        ctx.beginPath(); 
+        ctx.moveTo(size/2, -size/4); 
+        ctx.lineTo(size/2 + Math.cos(armAngle)*15, -size/4 - Math.sin(armAngle)*15); 
+        ctx.stroke();
     } else {
-       // Side profile
-       ctx.fillRect(-size/2, -size*1.4, size, size/2);
+        // Normal Arms
+        ctx.fillStyle = drawColor;
+        // Left
+        ctx.beginPath();
+        ctx.ellipse(-size/1.8, size/6 + armSwing, size/5, size/2.5, Math.PI/8, 0, Math.PI*2);
+        ctx.fill();
+        // Right
+        ctx.beginPath();
+        ctx.ellipse(size/1.8, size/6 - armSwing, size/5, size/2.5, -Math.PI/8, 0, Math.PI*2);
+        ctx.fill();
     }
 
-    // Jump Rope
-    if (gameState.currentLesson === 'PE' && gameState.currentMapId === 'playground') {
-        ctx.strokeStyle = '#FCD34D';
-        ctx.lineWidth = 2;
+    // --- BODY ---
+    // Create gradient for body
+    const bodyGrad = ctx.createLinearGradient(-size/2, -size/2, size/2, size);
+    bodyGrad.addColorStop(0, drawColor);
+    bodyGrad.addColorStop(1, adjustColor(drawColor, -20)); // darker at bottom
+
+    ctx.fillStyle = bodyGrad;
+    if (entity.visual?.outfit === 'sport_male' || shouldAnimateGym) {
+        // Tracksuit / Shorts
         ctx.beginPath();
-        ctx.arc(0, 0, size, 0, Math.PI, false);
+        ctx.roundRect(-size/2, -size/2, size, size*1.2, 5);
+        ctx.fill();
+        // Stripe
+        ctx.fillStyle = '#FFF';
+        ctx.fillRect(-size/2 + 2, -size/2, 2, size*1.2);
+        ctx.fillRect(size/2 - 4, -size/2, 2, size*1.2);
+    } else if (entity.visual?.outfit === 'skirt' || (!entity.visual?.outfit && !isPlayer)) {
+         // Dress
+        ctx.beginPath();
+        ctx.moveTo(-size/2, -size/2);
+        ctx.lineTo(size/2, -size/2);
+        ctx.lineTo(size/1.2, size);
+        ctx.lineTo(-size/1.2, size);
+        ctx.closePath();
+        ctx.fill();
+    } else if (isPlayer) {
+        // Player Outfit (Purple)
+        ctx.fillStyle = '#D8B4FE';
+        ctx.fillRect(-size/2, -size/2, size, size*0.8);
+        ctx.fillStyle = '#7E22CE'; // Skirt
+        ctx.beginPath(); 
+        ctx.moveTo(-size/2, size/3); 
+        ctx.lineTo(size/2, size/3); 
+        ctx.lineTo(size/1.2, size); 
+        ctx.lineTo(-size/1.2, size); 
+        ctx.fill();
+    } else {
+        // Generic Body
+        ctx.beginPath();
+        ctx.roundRect(-size/2, -size/2, size, size*1.2, 3);
+        ctx.fill();
+    }
+
+    // Apron Overlay (Chinese Teacher)
+    if (entity.visual?.outfit === 'apron') {
+        ctx.fillStyle = '#FFF';
+        ctx.fillRect(-size/2.2, -size/2, size/1.1, size/1.2);
+        // Straps
+        ctx.fillStyle = '#374151';
+        ctx.fillRect(-size/3, -size/2, 4, size/2);
+        ctx.fillRect(size/3 - 4, -size/2, 4, size/2);
+    }
+
+    // --- HEAD ---
+    // Radial Gradient for spherical look
+    const headGrad = ctx.createRadialGradient(-size/4, -size, size/10, 0, -size/1.2, size/1.5);
+    headGrad.addColorStop(0, '#FECACA'); // highlight
+    headGrad.addColorStop(1, '#FCA5A5'); // skin
+    ctx.fillStyle = headGrad;
+    ctx.beginPath();
+    ctx.arc(0, -size/1.2, size/1.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // --- FACE ---
+    if (facing !== 'up') {
+        ctx.fillStyle = '#1F2937';
+        // Eyes (Pupils)
+        const eyeXOffset = facing === 'right' ? 3 : (facing === 'left' ? -3 : 0);
+        if (facing === 'down') {
+            ctx.beginPath(); ctx.ellipse(-5, -size/1.2 - 2, 2, 3, 0, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(5, -size/1.2 - 2, 2, 3, 0, 0, Math.PI*2); ctx.fill();
+        } else {
+            ctx.beginPath(); ctx.ellipse(eyeXOffset, -size/1.2 - 2, 2, 3, 0, 0, Math.PI*2); ctx.fill();
+        }
+        // Mouth (Smile)
+        ctx.beginPath();
+        ctx.arc(eyeXOffset, -size/1.2 + 4, 3, 0, Math.PI, false);
         ctx.stroke();
+    }
+
+    // --- HAIR ---
+    ctx.fillStyle = (entity.visual?.hair === 'curly_brown') ? '#8B4513' : '#1F2937';
+    if (isPlayer) {
+        // Player Braids
+        ctx.fillStyle = '#1F2937';
+        ctx.beginPath(); ctx.arc(0, -size/1.2, size/1.6, Math.PI, 0); ctx.fill(); // Bangs
+        const braidSwing = isMoving ? Math.sin(walkFrameRef.current)*2 : 0;
+        ctx.lineWidth = 7;
+        ctx.strokeStyle = '#1F2937';
+        ctx.beginPath(); ctx.moveTo(-size/1.6, -size/1.2); ctx.quadraticCurveTo(-size - braidSwing, 0, -size/2 - braidSwing, size/2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(size/1.6, -size/1.2); ctx.quadraticCurveTo(size + braidSwing, 0, size/2 + braidSwing, size/2); ctx.stroke();
+        ctx.lineWidth = 1;
+    } else if (entity.visual?.hair === 'curly_brown') {
+        ctx.beginPath();
+        for(let i=0; i<6; i++) ctx.arc(-size/1.5 + i*(size/3.5), -size*1.3, size/3, 0, Math.PI*2);
+        ctx.fill();
+    } else if (entity.visual?.hair === 'long_black') {
+        ctx.beginPath();
+        ctx.moveTo(-size/1.5, -size/1.2); ctx.lineTo(-size, size/2); ctx.lineTo(size, size/2); ctx.lineTo(size/1.5, -size/1.2);
+        ctx.fill();
+        ctx.beginPath(); ctx.arc(0, -size/1.2, size/1.6, Math.PI, 0); ctx.fill(); // Bangs
+    } else if (entity.visual?.hair === 'short_black' || entity.visual?.hair === 'short_black_male') {
+         ctx.beginPath();
+         ctx.arc(0, -size/1.2, size/1.5, Math.PI, 0);
+         ctx.lineTo(size/1.5, -size/1.5); ctx.lineTo(-size/1.5, -size/1.5);
+         ctx.fill();
+    } else {
+        ctx.beginPath(); ctx.arc(0, -size/1.2, size/1.6, Math.PI, 0); ctx.fill();
+    }
+
+    // --- ACCESSORIES ---
+    if (isPlayer) {
+        ctx.fillStyle = '#EC4899';
+        ctx.beginPath(); ctx.arc(-size, size/4, size/4, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(size, size/4, size/4, 0, Math.PI*2); ctx.fill();
+    }
+    if (currentSt.currentLesson === 'PE' && currentSt.currentMapId === 'playground') {
+         ctx.strokeStyle = '#FCD34D';
+         ctx.lineWidth = 2;
+         ctx.beginPath(); ctx.arc(0, 0, size*1.2, 0, Math.PI); ctx.stroke();
     }
 
     ctx.restore();
   };
 
+  const adjustColor = (color: string, amount: number) => {
+      return color; // Simplification: keeps same color for now to save bytes, real implementation would parse hex
+  };
+
   const drawBuilding = (ctx: CanvasRenderingContext2D, entity: Entity) => {
     const { x, y } = entity.pos;
+    ctx.shadowBlur = 10; ctx.shadowColor = 'rgba(0,0,0,0.3)';
+    
+    // Main Body
     ctx.fillStyle = '#F3F4F6';
-    ctx.fillRect(x - 300, y - 100, 600, 100);
+    ctx.beginPath(); ctx.rect(x - 300, y - 100, 600, 100); ctx.fill(); 
+    ctx.lineWidth = 2; ctx.strokeStyle = '#9CA3AF'; ctx.stroke();
+
+    // Bricks
+    ctx.strokeStyle = 'rgba(0,0,0,0.05)';
+    for(let i=0; i<6; i++) {
+        ctx.beginPath(); ctx.moveTo(x-300, y-100 + i*20); ctx.lineTo(x+300, y-100+i*20); ctx.stroke();
+    }
+
     // Roof
-    ctx.fillStyle = '#EF4444';
-    ctx.beginPath();
-    ctx.moveTo(x - 320, y - 100);
-    ctx.lineTo(x + 320, y - 100);
-    ctx.lineTo(x, y - 180);
-    ctx.fill();
-    // Text
-    ctx.fillStyle = '#1F2937';
-    ctx.font = '20px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('阳光小学', x, y - 40);
+    const roofGrad = ctx.createLinearGradient(x, y-180, x, y-100);
+    roofGrad.addColorStop(0, '#EF4444'); roofGrad.addColorStop(1, '#B91C1C');
+    ctx.fillStyle = roofGrad;
+    ctx.beginPath(); ctx.moveTo(x - 320, y - 100); ctx.lineTo(x + 320, y - 100); ctx.lineTo(x, y - 180); ctx.fill();
+    
+    // Roof Tiles
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    for(let i=0; i<10; i++) {
+        ctx.beginPath(); ctx.moveTo(x-320 + i*64, y-100); ctx.lineTo(x, y-180); ctx.stroke();
+    }
+
     // Door
     ctx.fillStyle = '#4B5563';
-    ctx.fillRect(x - 40, y - 20, 80, 120);
+    ctx.beginPath(); ctx.rect(x - 40, y - 20, 80, 120); ctx.fill();
+    ctx.fillStyle = '#1F2937'; ctx.fillRect(x - 35, y - 15, 70, 110); // Inner frame
+    
+    ctx.shadowBlur = 0;
+    
+    ctx.fillStyle = '#1F2937';
+    ctx.font = 'bold 24px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('阳光小学', x, y - 40);
   };
 
   const drawStore = (ctx: CanvasRenderingContext2D, entity: Entity) => {
     const { x, y } = entity.pos;
+    ctx.shadowBlur = 5; ctx.shadowColor = 'rgba(0,0,0,0.2)';
+
     ctx.fillStyle = '#FFF7ED';
-    ctx.fillRect(x - 75, y - 80, 150, 80);
-    ctx.fillStyle = '#F59E0B'; // Orange roof
-    ctx.fillRect(x - 80, y - 100, 160, 20);
-    // Awning stripes
+    ctx.beginPath(); ctx.rect(x - 75, y - 80, 150, 80); ctx.fill(); ctx.stroke();
+    
+    // Awning
+    ctx.shadowBlur = 2;
     for(let i=0; i<8; i++) {
         ctx.fillStyle = i%2===0 ? '#EF4444' : '#FFFFFF';
-        ctx.fillRect(x - 75 + i*18.75, y - 80, 18.75, 10);
+        ctx.beginPath();
+        ctx.roundRect(x - 75 + i*18.75, y - 100, 18.75, 20, 2);
+        ctx.fill();
     }
+    ctx.shadowBlur = 0;
+    
     ctx.fillStyle = '#1F2937';
-    ctx.font = '12px Arial';
+    ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('小卖部', x, y - 30);
+    ctx.fillText('小卖部', x, y - 40);
   };
 
   const drawDormitory = (ctx: CanvasRenderingContext2D, entity: Entity) => {
     const { x, y } = entity.pos;
+    ctx.shadowBlur = 5; ctx.shadowColor = 'rgba(0,0,0,0.2)';
+    
     ctx.fillStyle = '#DBEAFE';
-    ctx.fillRect(x - 100, y - 50, 200, 100);
-    // Roof
+    ctx.beginPath(); ctx.rect(x - 100, y - 50, 200, 100); ctx.fill(); ctx.stroke();
+    
     ctx.fillStyle = '#3B82F6';
     ctx.beginPath(); ctx.moveTo(x - 110, y - 50); ctx.lineTo(x + 110, y - 50); ctx.lineTo(x, y - 100); ctx.fill();
+    
+    ctx.shadowBlur = 0;
     ctx.fillStyle = '#1F2937';
+    ctx.font = 'bold 16px sans-serif';
     ctx.fillText('学生宿舍', x, y - 10);
   };
 
@@ -1046,134 +1215,80 @@ export default function App() {
     const { x, y } = entity.pos;
     const { size, color } = entity;
     
+    ctx.shadowBlur = 3; ctx.shadowColor = 'rgba(0,0,0,0.2)';
+
     if (entity.type === EntityType.BACKPACK) {
-        ctx.save();
         ctx.translate(x, y);
-        // Bag Body
         ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.roundRect(-size/1.2, -size/1.5, size*1.6, size*1.4, 5);
-        ctx.fill();
+        ctx.beginPath(); ctx.roundRect(-size/1.2, -size/1.5, size*1.6, size*1.4, 8); ctx.fill();
         // Flap
-        ctx.fillStyle = '#BE185D'; // Darker pink
-        ctx.beginPath();
-        ctx.roundRect(-size/1.2, -size/1.5, size*1.6, size*0.8, 5);
-        ctx.fill();
-        // Straps/Buckles
-        ctx.fillStyle = '#FFD700';
-        ctx.fillRect(-size/3, -size/3, size/4, size/4);
-        ctx.fillRect(size/10, -size/3, size/4, size/4);
-        ctx.restore();
+        ctx.fillStyle = '#BE185D'; 
+        ctx.beginPath(); ctx.roundRect(-size/1.2, -size/1.5, size*1.6, size*0.8, 5); ctx.fill();
+        // Straps
+        ctx.strokeStyle = '#9D174D'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(-size/3, -size/1.5); ctx.lineTo(-size/3, size/2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(size/3, -size/1.5); ctx.lineTo(size/3, size/2); ctx.stroke();
+        ctx.translate(-x, -y);
+        ctx.shadowBlur = 0;
         return;
     }
 
-    if (entity.type === EntityType.DESK) {
-        ctx.fillStyle = '#92400E';
-        ctx.fillRect(x - size, y - size/2, size*2, size);
-        ctx.fillStyle = '#78350F'; // Chair tucked in back
-        ctx.fillRect(x - size/2, y - size/2 - 5, size, 5);
-        return;
-    }
-
-    if (entity.type === EntityType.TABLE) {
-        ctx.fillStyle = color;
-        ctx.fillRect(x - size/2, y - size/3, size, size/1.5);
-        // Computer for RA
-        if (entity.id === 'ra_desk') {
-            ctx.fillStyle = '#374151';
-            ctx.fillRect(x - 10, y - 20, 20, 15); // Monitor
-            ctx.fillStyle = '#9CA3AF';
-            ctx.fillRect(x - 10, y - 5, 20, 2); // Keyboard
-        }
+    if (entity.type === EntityType.DESK || entity.type === EntityType.TABLE) {
+        ctx.fillStyle = '#78350F'; // Dark Wood
+        if (entity.type === EntityType.TABLE) ctx.fillStyle = color;
+        
+        const w = entity.type === EntityType.DESK ? size*2 : size;
+        const h = entity.type === EntityType.DESK ? size : size/1.5;
+        
+        ctx.beginPath(); ctx.roundRect(x - w/2, y - h/2, w, h, 2); ctx.fill();
+        
+        // Wood Grain
+        ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x-w/2, y); ctx.lineTo(x+w/2, y); ctx.stroke();
+        
+        ctx.shadowBlur = 0;
         return;
     }
 
     if (entity.type === EntityType.BED) {
-        ctx.fillStyle = color;
+        // Bed Frame
+        ctx.fillStyle = '#92400E';
         ctx.fillRect(x - size/2, y - size, size, size*2);
+        // Mattress
+        ctx.fillStyle = color;
+        ctx.fillRect(x - size/2 + 2, y - size + 2, size - 4, size*2 - 4);
         // Pillow
         ctx.fillStyle = '#FFF';
-        ctx.fillRect(x - size/2 + 5, y - size + 5, size - 10, 20);
-        // Ladder for bunk
+        ctx.beginPath(); ctx.roundRect(x - size/2 + 5, y - size + 5, size - 10, 20, 5); ctx.fill();
+        // Ladder
         ctx.fillStyle = '#B45309';
         ctx.fillRect(x + size/2 - 10, y - size, 10, size*2);
         for(let i=0; i<5; i++) {
-             ctx.fillRect(x + size/2 - 10, y - size + i*30, 10, 2);
+             ctx.fillStyle = 'rgba(0,0,0,0.2)';
+             ctx.fillRect(x + size/2 - 10, y - size + i*30 + 20, 10, 2);
         }
+        ctx.shadowBlur = 0;
         return;
     }
-
-    if (entity.type === EntityType.SHELF) {
-        ctx.fillStyle = color;
-        ctx.fillRect(x - size/2, y - size/2, size, size);
-        // Items
-        ctx.fillStyle = '#FCD34D'; ctx.fillRect(x - size/2 + 5, y - size/4, 20, 10);
-        ctx.fillStyle = '#EF4444'; ctx.fillRect(x, y - size/4, 20, 10);
-        return;
-    }
-
-    if (entity.type === EntityType.FRIDGE) {
-        ctx.fillStyle = '#E5E7EB';
-        ctx.fillRect(x - size/2, y - size, size, size*2);
-        ctx.fillStyle = '#60A5FA'; // Glass
-        ctx.fillRect(x - size/2 + 5, y - size + 5, size - 10, size*2 - 10);
-        return;
-    }
-
-    if (entity.type === EntityType.WINDOW) {
-        ctx.fillStyle = '#EFF6FF';
-        ctx.fillRect(x - size/2, y, size, size/1.5);
-        ctx.fillStyle = '#DBEAFE'; 
-        ctx.fillRect(x - size/2 + 4, y + 4, size - 8, size/1.5 - 8); // Inner glass
-        ctx.strokeStyle = '#60A5FA';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(x - size/2, y, size, size/1.5);
-        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + size/1.5); ctx.stroke();
-        return;
-    }
-
-    if (entity.type === EntityType.POSTER) {
-       ctx.fillStyle = '#FEF9C3'; // Paper color
-       ctx.fillRect(x - size/2, y - size/2, size, size*1.4);
-       ctx.fillStyle = color;
-       ctx.fillRect(x - size/2 + 2, y - size/2 + 2, size - 4, size/2); // Image area
-       // Fake text lines
-       ctx.fillStyle = '#9CA3AF';
-       ctx.fillRect(x - size/2 + 4, y + 5, size - 8, 2);
-       ctx.fillRect(x - size/2 + 4, y + 10, size - 8, 2);
-       return;
-    }
-
-    if (entity.type === EntityType.PLANT) {
-       // Pot
-       ctx.fillStyle = '#B45309';
-       ctx.beginPath();
-       ctx.moveTo(x - 10, y + 10);
-       ctx.lineTo(x + 10, y + 10);
-       ctx.lineTo(x + 8, y + 20);
-       ctx.lineTo(x - 8, y + 20);
-       ctx.fill();
-       // Leaves
-       ctx.fillStyle = '#22C55E';
-       ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI*2); ctx.fill();
-       ctx.beginPath(); ctx.arc(x - 8, y - 5, 6, 0, Math.PI*2); ctx.fill();
-       ctx.beginPath(); ctx.arc(x + 8, y - 5, 6, 0, Math.PI*2); ctx.fill();
-       ctx.beginPath(); ctx.arc(x, y - 10, 6, 0, Math.PI*2); ctx.fill();
-       return;
-    }
+    
+    // Generic fallback for others
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.rect(x - size/2, y - size/2, size, size); ctx.fill();
+    ctx.shadowBlur = 0;
   };
 
   const drawPortalHole = (ctx: CanvasRenderingContext2D, entity: Entity) => {
-      // Red Hole for Dorm
       const { x, y } = entity.pos;
       ctx.save();
       ctx.translate(x, y);
-      ctx.scale(1, 0.5); // Perspective
-      ctx.fillStyle = '#7F1D1D'; // Dark Red (Deep)
+      ctx.scale(1, 0.5); 
+      // Gradient Hole
+      const grad = ctx.createRadialGradient(0,0,0, 0,0,entity.size/2);
+      grad.addColorStop(0, '#450A0A');
+      grad.addColorStop(1, '#EF4444');
+      ctx.fillStyle = grad; 
       ctx.beginPath(); ctx.arc(0, 0, entity.size/2, 0, Math.PI*2); ctx.fill();
-      ctx.strokeStyle = '#EF4444'; // Bright Red Ring
-      ctx.lineWidth = 4;
-      ctx.stroke();
       ctx.restore();
   };
 
@@ -1183,69 +1298,76 @@ export default function App() {
       
       ctx.save();
       ctx.translate(x, y);
+      ctx.shadowBlur = 2; ctx.shadowColor = 'rgba(0,0,0,0.2)';
+      
       if (entity.type === EntityType.DOG) {
           ctx.fillStyle = entity.color;
-          ctx.fillRect(-10, -5, 20, 10); // Body
-          ctx.fillRect(-12, -8, 8, 8); // Head
-          // Tail wag
-          ctx.beginPath(); ctx.moveTo(10, -5); ctx.lineTo(10 + Math.sin(t)*5, -8); ctx.stroke();
+          // Body
+          ctx.beginPath(); ctx.roundRect(-12, -6, 24, 12, 4); ctx.fill();
+          // Head
+          ctx.beginPath(); ctx.arc(-12, -10, 8, 0, Math.PI*2); ctx.fill();
+          // Tail
+          ctx.strokeStyle = entity.color; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.moveTo(12, -6); ctx.lineTo(12 + Math.sin(t)*5, -12); ctx.stroke();
       } else if (entity.type === EntityType.CAT) {
           ctx.fillStyle = entity.color;
-          ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI*2); ctx.fill(); // Body
-          ctx.beginPath(); ctx.moveTo(-3, -6); ctx.lineTo(-6, -10); ctx.lineTo(0, -8); ctx.fill(); // Ears
-          ctx.beginPath(); ctx.moveTo(3, -6); ctx.lineTo(6, -10); ctx.lineTo(0, -8); ctx.fill();
+          ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI*2); ctx.fill();
+          // Ears
+          ctx.beginPath(); ctx.moveTo(-3, -6); ctx.lineTo(-6, -12); ctx.lineTo(0, -8); ctx.fill();
+          ctx.beginPath(); ctx.moveTo(3, -6); ctx.lineTo(6, -12); ctx.lineTo(0, -8); ctx.fill();
       } else {
           // Bird
           ctx.fillStyle = entity.color;
           const jump = Math.abs(Math.sin(t*2)) * 5;
           ctx.translate(0, -jump);
-          ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI*2); ctx.fill();
-          ctx.fillStyle = '#FCD34D';
-          ctx.beginPath(); ctx.moveTo(3, -2); ctx.lineTo(6, 0); ctx.lineTo(3, 2); ctx.fill(); // Beak
+          ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI*2); ctx.fill();
+          ctx.fillStyle = '#FCD34D'; // Beak
+          ctx.beginPath(); ctx.moveTo(4, -2); ctx.lineTo(8, 0); ctx.lineTo(4, 2); ctx.fill();
       }
       ctx.restore();
   };
 
   const drawPool = (ctx: CanvasRenderingContext2D, entity: Entity) => {
-      const { x, y, size } = entity.pos as any; // Using Entity props
+      const { x, y } = entity.pos; 
       const s = entity.size;
       ctx.save();
       ctx.translate(entity.pos.x, entity.pos.y);
-      ctx.fillStyle = '#93C5FD'; // Light blue water
-      ctx.fillRect(-s, -s/2, s*2, s);
+      // Water
+      ctx.fillStyle = '#60A5FA'; 
+      ctx.beginPath(); ctx.roundRect(-s, -s/2, s*2, s, 10); ctx.fill();
+      
+      // Waves
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 2;
+      const t = Date.now() / 1000;
+      for(let i=0; i<3; i++) {
+          const waveY = Math.sin(t + i)*20;
+          ctx.beginPath(); 
+          ctx.moveTo(-s + 20, -s/4 + i*30 + waveY/2); 
+          ctx.quadraticCurveTo(0, -s/4 + i*30 - 20 + waveY, s - 20, -s/4 + i*30 + waveY/2); 
+          ctx.stroke();
+      }
+
       ctx.strokeStyle = '#1E40AF';
       ctx.lineWidth = 4;
       ctx.strokeRect(-s, -s/2, s*2, s);
-      
-      // Ripples
-      const t = Date.now() / 500;
-      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(Math.sin(t)*20, Math.cos(t)*10, 10, 0, Math.PI*2);
-      ctx.stroke();
-      
-      ctx.fillStyle = '#1E3A8A';
-      ctx.font = '14px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText(entity.name || '泳池', 0, 0);
       ctx.restore();
   };
 
+  // --- RENDER LOOP ---
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Canvas Size
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
     const render = () => {
+      const currentSt = gameStateRef.current;
       const map = mapRef.current;
       
-      // Camera
       const camX = Math.max(0, Math.min(map.width - canvas.width, playerRef.current.x - canvas.width / 2));
       const camY = Math.max(0, Math.min(map.height - canvas.height, playerRef.current.y - canvas.height / 2));
       
@@ -1255,27 +1377,41 @@ export default function App() {
       ctx.fillStyle = map.backgroundColor;
       ctx.fillRect(0, 0, map.width, map.height);
 
-      // Floor Details (Courts/Rugs)
-      if (gameState.currentMapId === 'playground') {
+      // Map Patterns
+      if (currentSt.currentMapId === 'playground') {
+          // Grass Noise
+          ctx.fillStyle = '#4D7C0F';
+          for(let i=0; i<100; i++) {
+              const rx = (i * 1234) % map.width;
+              const ry = (i * 5678) % map.height;
+              ctx.fillRect(rx, ry, 3, 3);
+          }
           // Basketball Court
           ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 4;
-          ctx.strokeRect(200, 600, 1000, 500); // Main Line
-          ctx.beginPath(); ctx.moveTo(700, 600); ctx.lineTo(700, 1100); ctx.stroke(); // Center Line
-          ctx.beginPath(); ctx.arc(700, 850, 80, 0, Math.PI*2); ctx.stroke(); // Center Circle
-      }
-      if (gameState.currentMapId === 'classroom') {
-          // Podium Rug
-          ctx.fillStyle = '#78350F';
-          ctx.fillRect(350, 50, 300, 60);
+          ctx.strokeRect(200, 600, 1000, 500); 
+          ctx.beginPath(); ctx.moveTo(700, 600); ctx.lineTo(700, 1100); ctx.stroke(); 
+          ctx.beginPath(); ctx.arc(700, 850, 80, 0, Math.PI*2); ctx.stroke(); 
+      } else if (currentSt.currentMapId === 'classroom' || currentSt.currentMapId === 'dorm_room') {
+          // Wood Floor
+          ctx.strokeStyle = 'rgba(0,0,0,0.05)';
+          ctx.lineWidth = 2;
+          for(let y=0; y<map.height; y+=30) {
+              ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(map.width, y); ctx.stroke();
+          }
+      } else if (currentSt.currentMapId === 'store_interior') {
+          // Tile Floor
+          ctx.fillStyle = 'rgba(0,0,0,0.03)';
+          for(let x=0; x<map.width; x+=40) {
+              for(let y=0; y<map.height; y+=40) {
+                  if ((x+y)%80 === 0) ctx.fillRect(x,y,40,40);
+              }
+          }
       }
 
-      // 1. Draw Walls (Bottom Layer)
-      map.walls.forEach(w => drawWall(ctx, w, gameState.currentMapId));
+      map.walls.forEach(w => drawWall(ctx, w, currentSt.currentMapId));
 
-      // 2. Draw Entities (Sorted by Y for depth)
       const sortedEntities = [...map.entities].sort((a, b) => a.pos.y - b.pos.y);
       
-      // Draw Player in proper depth order
       let playerDrawn = false;
       sortedEntities.forEach(entity => {
           if (!playerDrawn && playerRef.current.y < entity.pos.y) {
@@ -1291,12 +1427,12 @@ export default function App() {
           else if (entity.type === EntityType.SWIMMING_POOL) drawPool(ctx, entity);
           else if (['BED','TABLE','CHAIR','SHELF','FRIDGE','DESK','BACKPACK','WINDOW','POSTER','PLANT'].includes(entity.type)) drawFurniture(ctx, entity);
           else if (['DOG','CAT','BIRD'].includes(entity.type)) drawAnimal(ctx, entity);
-          else if (entity.id === 'portal_hallway') drawPortalHole(ctx, entity); // Red hole
-          else if (entity.type === EntityType.PORTAL) { /* invisible usually */ }
+          else if (entity.id === 'portal_hallway') drawPortalHole(ctx, entity); 
+          else if (entity.type === EntityType.PORTAL) {  }
           else if (entity.type === EntityType.HOOP) {
-               ctx.fillStyle = '#EEE'; ctx.fillRect(entity.pos.x, entity.pos.y - 100, 10, 100); // Pole
-               ctx.strokeStyle = '#F00'; ctx.lineWidth = 2; ctx.strokeRect(entity.pos.x - 20, entity.pos.y - 120, 40, 30); // Board
-               ctx.beginPath(); ctx.arc(entity.pos.x, entity.pos.y - 100, 15, 0, Math.PI); ctx.stroke(); // Rim
+               ctx.fillStyle = '#EEE'; ctx.fillRect(entity.pos.x, entity.pos.y - 100, 10, 100); 
+               ctx.strokeStyle = '#F00'; ctx.lineWidth = 2; ctx.strokeRect(entity.pos.x - 20, entity.pos.y - 120, 40, 30); 
+               ctx.beginPath(); ctx.arc(entity.pos.x, entity.pos.y - 100, 15, 0, Math.PI); ctx.stroke(); 
           }
           else drawSprite(ctx, entity);
       });
@@ -1307,52 +1443,43 @@ export default function App() {
           }, true);
       }
 
-      // Night Overlay
-      if (gameState.isNight) {
-          ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset for overlay
-          ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      if (currentSt.isNight) {
+          ctx.setTransform(1, 0, 0, 1, 0, 0); 
+          ctx.fillStyle = 'rgba(10, 15, 30, 0.7)';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
       
-      requestAnimationFrame(render);
+      requestRef.current = requestAnimationFrame(render);
     };
     
-    render();
-  }, [gameState]);
+    requestRef.current = requestAnimationFrame(render);
+    
+    return () => {
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+    };
+  }, []);
+
+  // Construct Date object for GameClock
+  const timeDate = new Date();
+  timeDate.setHours(Math.floor(gameState.gameTime / 60));
+  timeDate.setMinutes(gameState.gameTime % 60);
 
   return (
     <div className="w-full h-screen bg-gray-900 relative">
       <canvas ref={canvasRef} onClick={handleCanvasClick} className="block cursor-pointer" />
       
+      <GameClock time={timeDate} phase={gameState.isNight ? 'Night' : gameState.isSchoolOver ? 'School Over' : 'School Day'} />
+      
       {/* UI Overlay */}
-      <div className="absolute top-4 left-4 bg-white/90 p-2 rounded shadow border border-slate-700">
+      <div className="absolute top-4 left-32 bg-white/90 p-2 rounded shadow border border-slate-700">
          <div className="text-sm font-bold text-red-600">{TEACHERS[gameState.currentLesson]?.subject || '课间'}</div>
          {gameState.isClassStarted && <div className="text-xs text-green-600">正在上课</div>}
          {gameState.isSchoolOver && <div className="text-xs text-red-600">放学了</div>}
       </div>
 
-      {gameState.isClassStarted && (
+      {gameState.isClassStarted && !gameState.isTeacherTransitioning && (
           <button 
-             onClick={() => {
-                const LESSON_ORDER: ('Chinese' | 'Math' | 'English' | 'PE')[] = ['Chinese', 'Math', 'English', 'PE'];
-                const nextIdx = LESSON_ORDER.indexOf(gameState.currentLesson) + 1;
-                let nextLesson = gameState.currentLesson;
-                let schoolOver = false;
-                
-                if (nextIdx < LESSON_ORDER.length) {
-                    nextLesson = LESSON_ORDER[nextIdx];
-                } else {
-                    schoolOver = true;
-                }
-
-                setGameState(prev => ({ 
-                    ...prev, 
-                    isClassStarted: false, 
-                    currentLesson: nextLesson,
-                    isSchoolOver: schoolOver,
-                    isLiningUp: false
-                }))
-             }}
+             onClick={handleDismissClass}
              className="absolute bottom-4 right-4 bg-red-500 text-white px-4 py-2 rounded shadow hover:bg-red-600 font-bold"
           >
              下课
