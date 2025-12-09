@@ -165,8 +165,10 @@ const MAPS: Record<string, MapData> = {
       { x: 0, y: 350, w: 600, h: 50 },
     ],
     entities: [
-      { id: 'portal_playground', type: EntityType.PORTAL, pos: { x: 30, y: 200 }, size: 40, color: '#9CA3AF', targetMap: 'playground', targetPos: { x: 200, y: 550 } },
-      { id: 'door_my_dorm', type: EntityType.PORTAL, pos: { x: 500, y: 50 }, size: 50, color: '#4B2A10', targetMap: 'dorm_room', targetPos: { x: 400, y: 500 } },
+      // Explicit labels and brighter colors for doors
+      { id: 'portal_playground', type: EntityType.PORTAL, pos: { x: 30, y: 200 }, size: 40, color: '#9CA3AF', targetMap: 'playground', targetPos: { x: 200, y: 550 }, name: '出口' },
+      { id: 'door_my_dorm', type: EntityType.PORTAL, pos: { x: 500, y: 50 }, size: 50, color: '#8B4513', targetMap: 'dorm_room', targetPos: { x: 400, y: 500 }, name: '我的宿舍' },
+      
       { id: 'ra_desk', type: EntityType.TABLE, pos: { x: 300, y: 250 }, size: 100, color: '#D97706', name: '值班前台' },
       { id: 'ra_chair', type: EntityType.CHAIR, pos: { x: 300, y: 200 }, size: 25, color: '#1F2937', name: '椅子', facing: 'down' },
       { id: 'ra_npc', type: EntityType.NPC, subtype: 'adult', pos: { x: 300, y: 200 }, size: 25, color: '#BE123C', name: '宿管老师', facing: 'down', persona: '像妈妈一样关心学生的生活', voiceName: 'Zephyr' } // Soft female
@@ -947,10 +949,13 @@ export default function App() {
     ctx.save();
     ctx.translate(x, y + bounce);
 
-    // Style Settings
-    ctx.shadowColor = 'rgba(0,0,0,0.2)';
-    ctx.shadowBlur = 4;
-    ctx.shadowOffsetY = 2;
+    // Style Settings for Hand-Drawn Stick Figure Look
+    const strokeColor = '#000';
+    const lineWidth = 3;
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = lineWidth;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
     const currentSt = gameStateRef.current;
     const isDoingGymnastics = currentSt.currentLesson === 'PE' && currentSt.isClassStarted && currentSt.currentMapId === 'playground';
@@ -961,27 +966,22 @@ export default function App() {
 
     const legSwing = isMoving ? Math.sin(walkFrameRef.current * 2) * 5 : 0;
     
-    // --- LEGS (Volumetric) ---
-    ctx.fillStyle = '#1F2937'; // Dark pants/shoes
+    // --- LEGS ---
+    ctx.beginPath();
     // Left Leg
-    ctx.beginPath(); 
-    ctx.roundRect(-size/2.5, size/2, size/3.5, size/1.5 + legSwing, 5); 
-    ctx.fill();
+    ctx.moveTo(-size/4, size/2);
+    ctx.lineTo(-size/4, size + legSwing);
     // Right Leg
-    ctx.beginPath(); 
-    ctx.roundRect(size/8, size/2, size/3.5, size/1.5 - legSwing, 5);
-    ctx.fill();
+    ctx.moveTo(size/4, size/2);
+    ctx.lineTo(size/4, size - legSwing);
+    ctx.stroke();
 
-    // --- ARMS (Volumetric) ---
+    // --- ARMS ---
     const armSwing = isMoving ? Math.cos(walkFrameRef.current * 2) * 5 : 0;
     if (shouldAnimateGym) {
         // Gymnastics Arms
         const gymPhase = Math.sin(Date.now() / 200);
         const armAngle = gymPhase > 0 ? Math.PI/4 : -Math.PI/1.5;
-        
-        ctx.strokeStyle = drawColor;
-        ctx.lineWidth = 6;
-        ctx.lineCap = 'round';
         ctx.beginPath(); 
         ctx.moveTo(-size/2, -size/4); 
         ctx.lineTo(-size/2 - Math.cos(armAngle)*15, -size/4 - Math.sin(armAngle)*15); 
@@ -992,144 +992,100 @@ export default function App() {
         ctx.stroke();
     } else {
         // Normal Arms
-        ctx.fillStyle = drawColor;
-        // Left
         ctx.beginPath();
-        ctx.ellipse(-size/1.8, size/6 + armSwing, size/5, size/2.5, Math.PI/8, 0, Math.PI*2);
-        ctx.fill();
-        // Right
-        ctx.beginPath();
-        ctx.ellipse(size/1.8, size/6 - armSwing, size/5, size/2.5, -Math.PI/8, 0, Math.PI*2);
-        ctx.fill();
+        // Left Arm
+        ctx.moveTo(-size/2, -size/4);
+        ctx.lineTo(-size/1.5 - armSwing, size/3);
+        // Right Arm
+        ctx.moveTo(size/2, -size/4);
+        ctx.lineTo(size/1.5 + armSwing, size/3);
+        ctx.stroke();
     }
 
-    // --- BODY ---
-    // Create gradient for body
-    const bodyGrad = ctx.createLinearGradient(-size/2, -size/2, size/2, size);
-    bodyGrad.addColorStop(0, drawColor);
-    bodyGrad.addColorStop(1, adjustColor(drawColor, -20)); // darker at bottom
-
-    ctx.fillStyle = bodyGrad;
-    if (entity.visual?.outfit === 'sport_male' || shouldAnimateGym) {
-        // Tracksuit / Shorts
-        ctx.beginPath();
-        ctx.roundRect(-size/2, -size/2, size, size*1.2, 5);
-        ctx.fill();
-        // Stripe
-        ctx.fillStyle = '#FFF';
-        ctx.fillRect(-size/2 + 2, -size/2, 2, size*1.2);
-        ctx.fillRect(size/2 - 4, -size/2, 2, size*1.2);
-    } else if (entity.visual?.outfit === 'skirt' || (!entity.visual?.outfit && !isPlayer)) {
-         // Dress
-        ctx.beginPath();
-        ctx.moveTo(-size/2, -size/2);
-        ctx.lineTo(size/2, -size/2);
-        ctx.lineTo(size/1.2, size);
-        ctx.lineTo(-size/1.2, size);
+    // --- BODY & CLOTHING ---
+    ctx.fillStyle = drawColor;
+    ctx.beginPath();
+    if (entity.visual?.outfit === 'skirt' || (isPlayer && !shouldAnimateGym)) {
+        // Skirt (Trapezoid)
+        ctx.moveTo(0, -size/2); // Neck
+        ctx.lineTo(-size/2, size/2); // Bottom Left
+        ctx.lineTo(size/2, size/2); // Bottom Right
         ctx.closePath();
-        ctx.fill();
-    } else if (isPlayer) {
-        // Player Outfit (Purple)
-        ctx.fillStyle = '#D8B4FE';
-        ctx.fillRect(-size/2, -size/2, size, size*0.8);
-        ctx.fillStyle = '#7E22CE'; // Skirt
-        ctx.beginPath(); 
-        ctx.moveTo(-size/2, size/3); 
-        ctx.lineTo(size/2, size/3); 
-        ctx.lineTo(size/1.2, size); 
-        ctx.lineTo(-size/1.2, size); 
-        ctx.fill();
     } else {
-        // Generic Body
-        ctx.beginPath();
-        ctx.roundRect(-size/2, -size/2, size, size*1.2, 3);
-        ctx.fill();
+        // Shirt/Pants (Rectangle-ish)
+        ctx.roundRect(-size/2, -size/2, size, size, 5);
     }
+    ctx.fill();
+    ctx.stroke();
 
-    // Apron Overlay (Chinese Teacher)
+    // Specific Player Details (Purple Pajamas / Purple Skirt)
+    if (isPlayer && !shouldAnimateGym) {
+        ctx.fillStyle = '#D8B4FE'; // Light purple top
+        ctx.beginPath(); ctx.moveTo(0, -size/2); ctx.lineTo(-size/2, size/4); ctx.lineTo(size/2, size/4); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#7E22CE'; // Dark purple skirt
+        ctx.beginPath(); ctx.moveTo(-size/2, size/4); ctx.lineTo(-size/1.5, size/1.2); ctx.lineTo(size/1.5, size/1.2); ctx.lineTo(size/2, size/4); ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    
+    // Chinese Teacher Apron
     if (entity.visual?.outfit === 'apron') {
         ctx.fillStyle = '#FFF';
-        ctx.fillRect(-size/2.2, -size/2, size/1.1, size/1.2);
-        // Straps
-        ctx.fillStyle = '#374151';
-        ctx.fillRect(-size/3, -size/2, 4, size/2);
-        ctx.fillRect(size/3 - 4, -size/2, 4, size/2);
+        ctx.fillRect(-size/3, -size/3, size/1.5, size/1.2);
+        ctx.strokeRect(-size/3, -size/3, size/1.5, size/1.2);
     }
 
     // --- HEAD ---
-    // Radial Gradient for spherical look
-    const headGrad = ctx.createRadialGradient(-size/4, -size, size/10, 0, -size/1.2, size/1.5);
-    headGrad.addColorStop(0, '#FECACA'); // highlight
-    headGrad.addColorStop(1, '#FCA5A5'); // skin
-    ctx.fillStyle = headGrad;
+    ctx.fillStyle = '#FFE4C4'; // Skin tone
     ctx.beginPath();
-    ctx.arc(0, -size/1.2, size/1.5, 0, Math.PI * 2);
+    ctx.arc(0, -size/1.2, size/1.8, 0, Math.PI * 2);
     ctx.fill();
+    ctx.stroke();
 
     // --- FACE ---
     if (facing !== 'up') {
-        ctx.fillStyle = '#1F2937';
-        // Eyes (Pupils)
-        const eyeXOffset = facing === 'right' ? 3 : (facing === 'left' ? -3 : 0);
-        if (facing === 'down') {
-            ctx.beginPath(); ctx.ellipse(-5, -size/1.2 - 2, 2, 3, 0, 0, Math.PI*2); ctx.fill();
-            ctx.beginPath(); ctx.ellipse(5, -size/1.2 - 2, 2, 3, 0, 0, Math.PI*2); ctx.fill();
-        } else {
-            ctx.beginPath(); ctx.ellipse(eyeXOffset, -size/1.2 - 2, 2, 3, 0, 0, Math.PI*2); ctx.fill();
-        }
-        // Mouth (Smile)
+        ctx.fillStyle = '#000';
+        // Eyes
+        const eyeXOffset = facing === 'right' ? 4 : (facing === 'left' ? -4 : 0);
+        ctx.beginPath(); ctx.arc(eyeXOffset - 3, -size/1.2 - 2, 2, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(eyeXOffset + 3, -size/1.2 - 2, 2, 0, Math.PI*2); ctx.fill();
+        // Smile
         ctx.beginPath();
-        ctx.arc(eyeXOffset, -size/1.2 + 4, 3, 0, Math.PI, false);
+        ctx.arc(eyeXOffset, -size/1.2 + 2, 4, 0.2, Math.PI - 0.2);
         ctx.stroke();
     }
 
     // --- HAIR ---
-    ctx.fillStyle = (entity.visual?.hair === 'curly_brown') ? '#8B4513' : '#1F2937';
+    ctx.fillStyle = (entity.visual?.hair === 'curly_brown') ? '#8B4513' : '#000';
     if (isPlayer) {
-        // Player Braids
-        ctx.fillStyle = '#1F2937';
-        ctx.beginPath(); ctx.arc(0, -size/1.2, size/1.6, Math.PI, 0); ctx.fill(); // Bangs
-        const braidSwing = isMoving ? Math.sin(walkFrameRef.current)*2 : 0;
-        ctx.lineWidth = 7;
-        ctx.strokeStyle = '#1F2937';
-        ctx.beginPath(); ctx.moveTo(-size/1.6, -size/1.2); ctx.quadraticCurveTo(-size - braidSwing, 0, -size/2 - braidSwing, size/2); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(size/1.6, -size/1.2); ctx.quadraticCurveTo(size + braidSwing, 0, size/2 + braidSwing, size/2); ctx.stroke();
-        ctx.lineWidth = 1;
+        // Braids
+        const braidSwing = isMoving ? Math.sin(walkFrameRef.current)*3 : 0;
+        ctx.beginPath(); 
+        ctx.moveTo(-size/1.8, -size/1.2); ctx.quadraticCurveTo(-size - braidSwing, 0, -size/2 - braidSwing, size/2);
+        ctx.moveTo(size/1.8, -size/1.2); ctx.quadraticCurveTo(size + braidSwing, 0, size/2 + braidSwing, size/2);
+        ctx.stroke();
+        // Bangs
+        ctx.beginPath(); ctx.arc(0, -size/1.2, size/1.8, Math.PI, 0); ctx.fill(); ctx.stroke();
     } else if (entity.visual?.hair === 'curly_brown') {
+        // Curly Hair Cloud
         ctx.beginPath();
-        for(let i=0; i<6; i++) ctx.arc(-size/1.5 + i*(size/3.5), -size*1.3, size/3, 0, Math.PI*2);
+        ctx.arc(0, -size*1.1, size/1.5, Math.PI, 0); // Top
+        ctx.arc(-size/1.5, -size, size/3, 0, Math.PI*2); // Left
+        ctx.arc(size/1.5, -size, size/3, 0, Math.PI*2); // Right
         ctx.fill();
     } else if (entity.visual?.hair === 'long_black') {
         ctx.beginPath();
-        ctx.moveTo(-size/1.5, -size/1.2); ctx.lineTo(-size, size/2); ctx.lineTo(size, size/2); ctx.lineTo(size/1.5, -size/1.2);
+        ctx.moveTo(-size/1.8, -size/1.2); ctx.lineTo(-size/1.2, size/2); ctx.lineTo(size/1.2, size/2); ctx.lineTo(size/1.8, -size/1.2);
         ctx.fill();
-        ctx.beginPath(); ctx.arc(0, -size/1.2, size/1.6, Math.PI, 0); ctx.fill(); // Bangs
+        ctx.beginPath(); ctx.arc(0, -size/1.2, size/1.8, Math.PI, 0); ctx.fill(); ctx.stroke();
     } else if (entity.visual?.hair === 'short_black' || entity.visual?.hair === 'short_black_male') {
          ctx.beginPath();
-         ctx.arc(0, -size/1.2, size/1.5, Math.PI, 0);
-         ctx.lineTo(size/1.5, -size/1.5); ctx.lineTo(-size/1.5, -size/1.5);
+         ctx.arc(0, -size/1.2, size/1.6, Math.PI, 0);
          ctx.fill();
     } else {
-        ctx.beginPath(); ctx.arc(0, -size/1.2, size/1.6, Math.PI, 0); ctx.fill();
-    }
-
-    // --- ACCESSORIES ---
-    if (isPlayer) {
-        ctx.fillStyle = '#EC4899';
-        ctx.beginPath(); ctx.arc(-size, size/4, size/4, 0, Math.PI*2); ctx.fill();
-        ctx.beginPath(); ctx.arc(size, size/4, size/4, 0, Math.PI*2); ctx.fill();
-    }
-    if (currentSt.currentLesson === 'PE' && currentSt.currentMapId === 'playground') {
-         ctx.strokeStyle = '#FCD34D';
-         ctx.lineWidth = 2;
-         ctx.beginPath(); ctx.arc(0, 0, size*1.2, 0, Math.PI); ctx.stroke();
+        // Generic Hair
+        ctx.beginPath(); ctx.arc(0, -size/1.2, size/1.8, Math.PI, 0); ctx.fill(); ctx.stroke();
     }
 
     ctx.restore();
-  };
-
-  const adjustColor = (color: string, amount: number) => {
-      return color; // Simplification: keeps same color for now to save bytes, real implementation would parse hex
   };
 
   const drawBuilding = (ctx: CanvasRenderingContext2D, entity: Entity) => {
@@ -1292,6 +1248,32 @@ export default function App() {
       ctx.restore();
   };
 
+  const drawDoor = (ctx: CanvasRenderingContext2D, entity: Entity) => {
+      const { pos: { x, y }, size, color, name } = entity;
+      ctx.shadowBlur = 3; ctx.shadowColor = 'rgba(0,0,0,0.2)';
+      
+      // Frame
+      ctx.fillStyle = '#374151';
+      ctx.fillRect(x - size/2 - 5, y - size, size + 10, size);
+      
+      // Door Leaf
+      ctx.fillStyle = color;
+      ctx.fillRect(x - size/2, y - size + 5, size, size - 5);
+      
+      // Knob
+      ctx.fillStyle = '#FCD34D';
+      ctx.beginPath(); ctx.arc(x + size/3, y - size/2, 3, 0, Math.PI*2); ctx.fill();
+
+      // Label
+      if (name) {
+          ctx.fillStyle = '#1F2937';
+          ctx.font = 'bold 12px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(name, x, y - size - 10);
+      }
+      ctx.shadowBlur = 0;
+  };
+
   const drawAnimal = (ctx: CanvasRenderingContext2D, entity: Entity) => {
       const { x, y } = entity.pos;
       const t = Date.now() / 200;
@@ -1427,7 +1409,8 @@ export default function App() {
           else if (entity.type === EntityType.SWIMMING_POOL) drawPool(ctx, entity);
           else if (['BED','TABLE','CHAIR','SHELF','FRIDGE','DESK','BACKPACK','WINDOW','POSTER','PLANT'].includes(entity.type)) drawFurniture(ctx, entity);
           else if (['DOG','CAT','BIRD'].includes(entity.type)) drawAnimal(ctx, entity);
-          else if (entity.id === 'portal_hallway') drawPortalHole(ctx, entity); 
+          else if (entity.id === 'portal_hallway') drawPortalHole(ctx, entity);
+          else if (entity.id === 'door_my_dorm' || (entity.id === 'portal_playground' && currentSt.currentMapId === 'dorm_hallway')) drawDoor(ctx, entity); 
           else if (entity.type === EntityType.PORTAL) {  }
           else if (entity.type === EntityType.HOOP) {
                ctx.fillStyle = '#EEE'; ctx.fillRect(entity.pos.x, entity.pos.y - 100, 10, 100); 
