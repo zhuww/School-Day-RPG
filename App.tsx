@@ -57,7 +57,9 @@ const STUDENT_TRAITS = [
     '喜欢画画',
     '调皮，喜欢玩',
     '热心肠，帮老师做事',
-    '爱睡觉'
+    '爱睡觉',
+    '追星族，喜欢讨论偶像',
+    '科技迷，喜欢机器人'
 ];
 
 const MAPS: Record<string, MapData> = {
@@ -232,7 +234,8 @@ const LEADERS = ['芳芳', '丽丽', '娜娜', '静静'];
 CLASSROOM_ENTITIES.forEach((e, i) => {
    if (e.type === EntityType.DESK && e.isOccupied) {
        const npcId = `student_${i}`;
-       const trait = STUDENT_TRAITS[i % STUDENT_TRAITS.length]; 
+       // Use Random Trait for each student
+       const trait = STUDENT_TRAITS[Math.floor(Math.random() * STUDENT_TRAITS.length)]; 
        // Assign 'Puck' or 'Aoede' (High pitch) for children voices
        const voice = i % 2 === 0 ? 'Puck' : 'Aoede'; 
        
@@ -264,7 +267,8 @@ const spawnRoommates = () => {
             { x: 500, y: 300 }, 
         ];
         const spot = targets[i];
-        const trait = STUDENT_TRAITS[(i + 5) % STUDENT_TRAITS.length]; 
+        // Use Random Trait
+        const trait = STUDENT_TRAITS[Math.floor(Math.random() * STUDENT_TRAITS.length)]; 
         const voice = i % 2 === 0 ? 'Aoede' : 'Puck';
 
         MAPS['dorm_room'].entities.push({

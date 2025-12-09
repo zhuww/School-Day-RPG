@@ -1,13 +1,17 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 
 const apiKey = process.env.API_KEY || ''; 
 const ai = new GoogleGenAI({ apiKey });
 
 const MODEL_NAME = 'gemini-2.5-flash';
 
-// Typical lines for specific characters to ensure personality
-const CHARACTER_LINES: Record<string, string[]> = {
+// In-memory cache to reduce API calls
+const dialogueCache = new Map<string, string>();
+const audioCache = new Map<string, string>();
+
+// Fallback lines for offline mode or quota exceeded
+const FALLBACK_LINES: Record<string, string[]> = {
   'teacher_chinese': [
     "（温柔）同学，要多读书，书里有黄金屋哦。",
     "（微笑）字如其人，写字要一笔一划。",
@@ -29,9 +33,10 @@ const CHARACTER_LINES: Record<string, string[]> = {
     "（鼓励）坚持就是胜利，再跑一圈！"
   ],
   'ra_npc': [
-    "（关心）天冷了，多穿点衣服。",
-    "（检查）被子要叠整齐哦。",
-    "（温和）早点休息，别熬夜。"
+    "（关心）天冷了，记得多穿件衣服，别着凉了。",
+    "（检查）宿舍卫生要注意，被子要叠成豆腐块哦。",
+    "（温和）晚上早点休息，明天上课才有精神。",
+    "（叮嘱）离开宿舍记得关好门窗，注意安全呀。"
   ],
   'guard': [
     "（警惕）注意安全，不要跟陌生人走。",
@@ -45,6 +50,23 @@ const CHARACTER_LINES: Record<string, string[]> = {
   ]
 };
 
+// Helper to generate local fallback based on persona keywords
+const getLocalFallback = (npcName: string, persona?: string, type?: string): string => {
+    if (!persona) return "你好呀！";
+    
+    if (persona.includes('吃货') || persona.includes('零食')) return "（嚼嚼）今天的午饭吃什么呢...";
+    if (persona.includes('看书') || persona.includes('学霸')) return "嘘，我在看书呢，别打扰我。";
+    if (persona.includes('运动') || persona.includes('打球')) return "好想去操场跑步啊！";
+    if (persona.includes('睡觉')) return "（揉眼睛）好困啊...再睡五分钟...";
+    if (persona.includes('画画')) return "你看我画的这只小猫像吗？";
+    if (persona.includes('秘密') || persona.includes('说话')) return "我告诉你一个秘密，你别告诉别人哦...";
+    if (persona.includes('害羞')) return "（脸红）那个...你好...";
+    if (persona.includes('追星')) return "你听过那个新的组合唱歌吗？太好听了！";
+    if (persona.includes('科技')) return "我在研究怎么把橡皮变成机器人！";
+    
+    return "今天天气真不错！";
+};
+
 export const generateDialogue = async (
     npcId: string, 
     npcName: string, 
@@ -54,87 +76,92 @@ export const generateDialogue = async (
     isLecture: boolean = false,
     subject?: string
 ): Promise<string> => {
-  // Hardcoded animal sounds (TTS usually handles these simple sounds okay)
+  // Hardcoded animal sounds (No API needed)
   if (type === 'DOG') return "汪汪！";
   if (type === 'CAT') return "喵~";
   if (type === 'BIRD') return "叽叽喳喳";
 
-  // If asking for a lecture, strictly generate educational content
-  if (isLecture && subject && apiKey) {
-      const prompt = `
-        Roleplay: Primary school teacher (${subject}).
-        Context: Giving a lecture in class.
-        Task: Say ONE sentence explaining a simple concept in ${subject}.
-        - Chinese: Explain a simple idiom or poem line.
-        - Math: Explain a simple addition/subtraction or geometry concept.
-        - English: Teach a simple phrase or word.
-        - PE: Give a specific exercise instruction.
-        Language: Simplified Chinese (English teacher can mix English).
-        Length: Max 30 words.
-      `;
-      try {
-          const response = await ai.models.generateContent({
-              model: MODEL_NAME,
-              contents: prompt,
-          });
-          return response.text?.trim() || "同学们，看黑板...";
-      } catch (e) {
-          return "同学们请安静，我们继续上课。";
-      }
+  // Check Cache
+  const cacheKey = `dialogue_${npcId}_${isLecture}`;
+  if (dialogueCache.has(cacheKey)) {
+      return dialogueCache.get(cacheKey)!;
   }
 
-  // 40% chance to return a "Typical" line for main NPCs to save tokens/time and ensure consistency
-  // But if a persona is provided (students), we prefer generating dynamic content.
-  if (!persona && CHARACTER_LINES[npcId] && Math.random() < 0.4) {
-      const lines = CHARACTER_LINES[npcId];
-      return lines[Math.floor(Math.random() * lines.length)];
-  }
-
-  if (!apiKey) return "你好！(API Key missing)";
+  // Fallback Logic for Lectures if API fails
+  const getLectureFallback = () => {
+      if (subject === '语文') return "同学们，'春眠不觉晓'这首诗描绘了春天的早晨。";
+      if (subject === '数学') return "大家看，1+1等于2，这是数学的基础。";
+      if (subject === '英语') return "Follow me: Good Morning!";
+      if (subject === '体育') return "伸展运动，一二三四，二二三四！";
+      return "同学们，请看黑板。";
+  };
 
   try {
-    let prompt = '';
-    
-    if (persona && type === 'NPC') {
-        // Child / Student Prompt
-        prompt = `
-          Context: Primary school RPG.
-          Character: ${npcName} (Child/Student).
-          Persona: ${persona}.
-          Task: Say a very short, cute, casual greeting or simple thought to a classmate.
-          - Max 10 words.
-          - Child-like tone.
-          - Simplified Chinese.
-        `;
-    } else {
-        // Fallback for generic NPCs
-        prompt = `
-          Context: Primary school RPG.
-          Character: ${npcName}.
-          Location: ${location}.
-          Task: Say one short sentence to a student.
-          - Max 15 words.
-          - Simplified Chinese.
-        `;
-    }
+      if (!apiKey) throw new Error("No API Key");
 
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-    });
+      let prompt = '';
+      
+      if (isLecture && subject) {
+          prompt = `
+            Roleplay: Primary school teacher (${subject}).
+            Context: Giving a lecture.
+            Task: Say ONE short sentence explaining a simple concept in ${subject}.
+            Language: Simplified Chinese.
+            Length: Max 20 words.
+          `;
+      } else if (persona && type === 'NPC') {
+          prompt = `
+            Context: Primary school RPG.
+            Character: ${npcName} (Child).
+            Persona: ${persona}.
+            Task: Roleplay as this child. Based on your persona, start a conversation topic related to your interests. Ask a question or share a thought.
+            Length: Max 15 words.
+            Language: Simplified Chinese.
+          `;
+      } else {
+          prompt = `
+            Context: Primary school RPG.
+            Character: ${npcName}.
+            Location: ${location}.
+            Task: Say one short sentence.
+            Length: Max 15 words.
+            Language: Simplified Chinese.
+          `;
+      }
 
-    return response.text?.trim() || "你好呀！";
+      const response = await ai.models.generateContent({
+        model: MODEL_NAME,
+        contents: prompt,
+      });
+
+      const text = response.text?.trim() || "你好！";
+      dialogueCache.set(cacheKey, text); // Cache the result
+      return text;
+
   } catch (error) {
-    console.error("Gemini API Error:", error);
-    return "...";
+    console.warn("Gemini API Error (Dialogue):", error);
+    // Graceful Fallback
+    if (isLecture) return getLectureFallback();
+    if (FALLBACK_LINES[npcId]) {
+        const lines = FALLBACK_LINES[npcId];
+        return lines[Math.floor(Math.random() * lines.length)];
+    }
+    return getLocalFallback(npcName, persona, type);
   }
 };
 
 export const generateSpeech = async (text: string, voice: string = 'Kore'): Promise<string | null> => {
   if (!apiKey) return null;
-  // Don't generate speech for brackets like (shaking tail)
+  
+  // Clean text
   const cleanText = text.replace(/（.*?）|\(.*?\)/g, '').trim();
   if (!cleanText) return null;
+
+  // Check Cache
+  const cacheKey = `audio_${voice}_${cleanText}`;
+  if (audioCache.has(cacheKey)) {
+      return audioCache.get(cacheKey)!;
+  }
 
   try {
     const response = await ai.models.generateContent({
@@ -149,10 +176,16 @@ export const generateSpeech = async (text: string, voice: string = 'Kore'): Prom
         },
       },
     });
-    return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || null;
+    
+    const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || null;
+    if (audioData) {
+        audioCache.set(cacheKey, audioData);
+    }
+    return audioData;
+
   } catch (error) {
-    console.error("TTS Error", error);
-    return null;
+    console.warn("Gemini API Error (TTS): Quota likely exceeded. Skipping audio.");
+    return null; // Return null to fail silently without breaking the game loop
   }
 };
 
