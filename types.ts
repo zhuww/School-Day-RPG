@@ -26,7 +26,8 @@ export enum EntityType {
   FRIDGE = 'FRIDGE',
   SWIMMING_POOL = 'SWIMMING_POOL',
   POSTER = 'POSTER',
-  PLANT = 'PLANT'
+  PLANT = 'PLANT',
+  BLACKBOARD = 'BLACKBOARD'
 }
 
 export interface Entity {

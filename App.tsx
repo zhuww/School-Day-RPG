@@ -125,6 +125,7 @@ const MAPS: Record<string, MapData> = {
       { id: 'portal_out', type: EntityType.PORTAL, pos: { x: 50, y: 400 }, size: 40, color: '#E5E7EB', targetMap: 'playground', targetPos: { x: 700, y: 380 } },
       
       // Classroom Decorations
+      { id: 'blackboard', type: EntityType.BLACKBOARD, pos: { x: 500, y: 30 }, size: 240, color: '#111827', name: '黑板' },
       { id: 'poster_1', type: EntityType.POSTER, pos: { x: 150, y: 20 }, size: 40, color: '#F87171', name: '名人名言' },
       { id: 'poster_2', type: EntityType.POSTER, pos: { x: 850, y: 20 }, size: 40, color: '#60A5FA', name: '班级公约' },
       { id: 'win_c1', type: EntityType.WINDOW, pos: { x: 300, y: 10 }, size: 60, color: '#fff' },
@@ -335,17 +336,81 @@ export default function App() {
   const targetRef = useRef<Point | null>(null);
   const mapRef = useRef(MAPS['playground']);
   const walkFrameRef = useRef(0);
+  const lastStepAudioRef = useRef(0);
   const facingRef = useRef<'left' | 'right' | 'up' | 'down'>('right');
   const npcStateRef = useRef<Map<string, { target: Point | null, timer: number, behavior?: 'exit' | 'stay' }>>(new Map());
 
+  // --- AUDIO SYSTEM (SFX & TTS) ---
+  const initAudio = () => {
+    if (!audioContextRef.current) {
+         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    if (audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume();
+    }
+  };
+
+  const playSfx = (type: 'step' | 'click' | 'open' | 'close' | 'success') => {
+      if (!audioContextRef.current) initAudio();
+      const ctx = audioContextRef.current!;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      const now = ctx.currentTime;
+      
+      if (type === 'step') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(100, now);
+          osc.frequency.exponentialRampToValueAtTime(50, now + 0.1);
+          gain.gain.setValueAtTime(0.1, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+          osc.start(now);
+          osc.stop(now + 0.1);
+      } else if (type === 'click') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(800, now);
+          gain.gain.setValueAtTime(0.1, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+          osc.start(now);
+          osc.stop(now + 0.1);
+      } else if (type === 'open') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(400, now);
+          osc.frequency.linearRampToValueAtTime(800, now + 0.2);
+          gain.gain.setValueAtTime(0.1, now);
+          gain.gain.linearRampToValueAtTime(0, now + 0.2);
+          osc.start(now);
+          osc.stop(now + 0.2);
+      } else if (type === 'close') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(800, now);
+          osc.frequency.linearRampToValueAtTime(400, now + 0.2);
+          gain.gain.setValueAtTime(0.1, now);
+          gain.gain.linearRampToValueAtTime(0, now + 0.2);
+          osc.start(now);
+          osc.stop(now + 0.2);
+      } else if (type === 'success') {
+          // Major Chord Arpeggio
+          [440, 554, 659].forEach((freq, i) => {
+              const o = ctx.createOscillator();
+              const g = ctx.createGain();
+              o.connect(g);
+              g.connect(ctx.destination);
+              o.frequency.value = freq;
+              g.gain.setValueAtTime(0.05, now + i*0.1);
+              g.gain.exponentialRampToValueAtTime(0.001, now + i*0.1 + 0.5);
+              o.start(now + i*0.1);
+              o.stop(now + i*0.1 + 0.5);
+          });
+      }
+  };
+
   const playAudio = async (base64Audio: string) => {
       try {
-          if (!audioContextRef.current) {
-               audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-          }
-          const ctx = audioContextRef.current;
-          if (ctx.state === 'suspended') await ctx.resume();
-
+          initAudio();
+          const ctx = audioContextRef.current!;
           const binaryString = atob(base64Audio);
           const len = binaryString.length;
           const bytes = new Uint8Array(len);
@@ -418,6 +483,7 @@ export default function App() {
               if (roommates.length > 0) {
                   const toRemove = roommates[0];
                   MAPS['dorm_room'].entities = MAPS['dorm_room'].entities.filter(e => e.id !== toRemove.id);
+                  playSfx('step'); // Sound for roommate leaving
                   setGameState(prev => ({...prev}));
               } else {
                   setGameState(prev => ({ 
@@ -477,13 +543,15 @@ export default function App() {
   };
 
   const interact = async (entity: Entity) => {
+    // Portals
     if (entity.type === EntityType.PORTAL && entity.targetMap && entity.targetPos) {
       if (gameState.isMorningQueue && entity.targetMap === 'dorm_hallway') {
+           playSfx('click');
            setGameState(prev => ({ ...prev, dialogue: { speaker: '旁白', text: '楼梯太挤了，大家都在排队，等一会再出去吧。' } }));
            targetRef.current = null;
            return;
       }
-
+      playSfx('open');
       mapRef.current = MAPS[entity.targetMap];
       playerRef.current = { ...entity.targetPos };
       targetRef.current = null;
@@ -504,39 +572,65 @@ export default function App() {
 
     if (entity.type === EntityType.STORE) return;
     
-    if (entity.type === EntityType.SWIMMING_POOL) {
+    // Interactions that just show dialogue
+    if (entity.type === EntityType.SWIMMING_POOL || entity.type === EntityType.SHELF || entity.type === EntityType.FRIDGE) {
+        playSfx('click');
         targetRef.current = null;
+        let text = '';
+        if (entity.type === EntityType.SWIMMING_POOL) text = '泳池的水很清凉，在这里游泳真是一种放松。';
+        else if (entity.type === EntityType.SHELF) text = '你拿了一包零食放进书包。';
+        else text = '你拿了一瓶饮料放进书包。';
+        
         setGameState(prev => ({
             ...prev,
-            dialogue: { speaker: '旁白', text: '泳池的水很清凉，在这里游泳真是一种放松。' }
+            dialogue: { speaker: '旁白', text }
         }));
         return;
     }
 
-    if (entity.type === EntityType.SHELF) {
+    if (entity.type === EntityType.BLACKBOARD) {
+        playSfx('click');
         targetRef.current = null;
-        setGameState(prev => ({
-            ...prev,
-            dialogue: { speaker: '旁白', text: '你拿了一包零食放进书包。' }
-        }));
+        let text = '值日生把黑板擦得很干净。';
+        if (gameState.isClassStarted) {
+            const lesson = gameState.currentLesson;
+            if (lesson === 'Chinese') text = '黑板上写着："春眠不觉晓，处处闻啼鸟。"';
+            if (lesson === 'Math') text = '黑板上写着："12 + 34 = 46"';
+            if (lesson === 'English') text = '黑板上写着："Apple, Banana, Orange"';
+        }
+        setGameState(prev => ({ ...prev, dialogue: { speaker: '旁白', text } }));
         return;
     }
 
-    if (entity.type === EntityType.FRIDGE) {
+    if (entity.type === EntityType.POSTER) {
+        playSfx('click');
         targetRef.current = null;
-        setGameState(prev => ({
-            ...prev,
-            dialogue: { speaker: '旁白', text: '你拿了一瓶饮料放进书包。' }
-        }));
+        let text = '';
+        
+        if (entity.name === '班级公约') {
+            text = '班级公约：\n1. 保持安静\n2. 互相帮助\n3. 爱护公物';
+        } else {
+             const lesson = gameState.currentLesson;
+             if (lesson === 'Chinese') text = '知识点：汉字的演变从甲骨文开始。';
+             else if (lesson === 'Math') text = '知识点：两点之间，线段最短。';
+             else if (lesson === 'English') text = 'Daily Phrase: "Have a nice day!"';
+             else if (lesson === 'PE') text = '健康小贴士：剧烈运动后不要立即喝冰水。';
+             else text = '好好学习，天天向上！';
+        }
+
+        setGameState(prev => ({ ...prev, dialogue: { speaker: '海报', text } }));
         return;
     }
 
     if (['NPC', 'DOG', 'CAT', 'BIRD'].includes(entity.type)) {
       if (entity.behavior === 'sleep') {
+          playSfx('click');
           setGameState(prev => ({ ...prev, dialogue: { speaker: '旁白', text: '她正在睡觉，不要打扰她。' } }));
           return;
       }
       
+      playSfx('click');
+
       // Face the player
       if (Math.abs(entity.pos.x - playerRef.current.x) > Math.abs(entity.pos.y - playerRef.current.y)) {
          facingRef.current = entity.pos.x > playerRef.current.x ? 'right' : 'left';
@@ -544,6 +638,7 @@ export default function App() {
          facingRef.current = entity.pos.y > playerRef.current.y ? 'down' : 'up';
       }
 
+      // Show immediate feedback "..."
       setGameState(prev => ({ ...prev, dialogue: { speaker: entity.name || 'Unknown', text: '...' } }));
       
       let isLecture = false;
@@ -553,8 +648,17 @@ export default function App() {
           subject = TEACHERS[gameState.currentLesson]?.subject || '';
       }
 
+      // 1. Generate Text
       const text = await generateDialogue(entity.id, entity.name || 'NPC', mapRef.current.name, entity.type, entity.persona, isLecture, subject);
       
+      // 2. Fetch Audio (Wait for both to be ready)
+      let audioData: string | null = null;
+      if (['NPC', 'DOG', 'CAT', 'BIRD'].includes(entity.type)) {
+          const voice = entity.voiceName || 'Kore';
+          audioData = await generateSpeech(text, voice);
+      }
+
+      // 3. Update UI and Play Audio Together
       setGameState(prev => {
           let newFriends = prev.friends;
           if (entity.subtype === 'child' && entity.name && !prev.friends.find(f => f.name === entity.name)) {
@@ -567,11 +671,8 @@ export default function App() {
           };
       });
 
-      if (['NPC', 'DOG', 'CAT', 'BIRD'].includes(entity.type)) {
-          const voice = entity.voiceName || 'Kore';
-          generateSpeech(text, voice).then(audioData => {
-              if(audioData) playAudio(audioData);
-          });
+      if (audioData) {
+          playAudio(audioData);
       }
 
       targetRef.current = null;
@@ -580,6 +681,7 @@ export default function App() {
 
     if (entity.type === EntityType.DESK && !entity.isOccupied) {
       if (entity.id !== gameState.satAtDeskId) {
+          playSfx('success');
           playerRef.current = { x: entity.pos.x, y: entity.pos.y + 40 };
           setGameState(prev => ({ ...prev, satAtDeskId: entity.id, dialogue: null, facing: 'up' }));
           facingRef.current = 'up'; 
@@ -587,6 +689,7 @@ export default function App() {
       }
       return;
     } else if (entity.type === EntityType.DESK && entity.isOccupied) {
+      playSfx('click');
       setGameState(prev => ({ ...prev, dialogue: { speaker: '旁白', text: '这个座位已经有人了。' } }));
       targetRef.current = null;
       return;
@@ -594,11 +697,14 @@ export default function App() {
 
     if (entity.type === EntityType.BACKPACK) {
        targetRef.current = null;
-       setGameState(prev => ({ ...prev, isBackpackOpen: !prev.isBackpackOpen }));
+       const nextState = !gameState.isBackpackOpen;
+       playSfx(nextState ? 'open' : 'close');
+       setGameState(prev => ({ ...prev, isBackpackOpen: nextState }));
        return;
     }
 
     if (entity.type === EntityType.BED && entity.name === '我的床') {
+        playSfx('success');
         handleSleep();
         return;
     }
@@ -638,6 +744,7 @@ export default function App() {
   };
 
   const switchLesson = (lesson: 'Chinese' | 'Math' | 'English' | 'PE') => {
+      playSfx('click');
       setGameState(prev => ({ 
           ...prev, 
           currentLesson: lesson, 
@@ -647,6 +754,7 @@ export default function App() {
   };
 
   const handleStartClass = () => {
+      playSfx('success');
       const teacherInfo = TEACHERS[gameState.currentLesson];
       const teacherId = teacherInfo.id;
       const doorPos = { x: 50, y: 400 };
@@ -680,15 +788,19 @@ export default function App() {
            setGameState(prev => ({ 
                ...prev, 
                isClassStarted: true,
-               dialogue: { speaker: '李老师(体)', text }
+               dialogue: { speaker: '李老师(体)', text: '...' }
            }));
-           generateSpeech(text, 'Fenrir').then(a => a && playAudio(a));
+           generateSpeech(text, 'Fenrir').then(a => {
+               if(a) playAudio(a);
+               setGameState(prev => ({ ...prev, dialogue: { speaker: '李老师(体)', text } }));
+           });
       } else {
            setGameState(prev => ({ ...prev, isClassStarted: true }));
       }
   };
 
   const handleDismissClass = () => {
+     playSfx('click');
      const teacherId = TEACHERS[gameState.currentLesson]?.id;
      if (teacherId) {
          setGameState(prev => ({ ...prev, isTeacherTransitioning: true }));
@@ -722,7 +834,11 @@ export default function App() {
   };
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // If blocked by dialogue or night, just process click to maybe dismiss dialog (handled in UI)
+    // but here we block movement logic
     if (gameState.dialogue || (gameState.isSchoolOver && gameState.isNight)) return;
+
+    initAudio(); // Ensure audio context is started on user gesture
 
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -781,6 +897,13 @@ export default function App() {
             } else {
                 facingRef.current = moveY > 0 ? 'down' : 'up';
             }
+            
+            // Play Step Sound periodically
+            if (walkFrameRef.current - lastStepAudioRef.current > 3) { // approx every 15 frames (~250ms)
+                playSfx('step');
+                lastStepAudioRef.current = walkFrameRef.current;
+            }
+
           } else {
              targetRef.current = null;
              setGameState(prev => ({ ...prev, isMoving: false }));
@@ -811,6 +934,7 @@ export default function App() {
                  targetPos: null,
                  dialogue: { speaker: '旁白', text: '你加入了队伍，大家一起整齐地走到了操场。' }
               }));
+              playSfx('success');
               return; 
           }
       }
@@ -1227,6 +1351,20 @@ export default function App() {
         ctx.shadowBlur = 0;
         return;
     }
+
+    if (entity.type === EntityType.BLACKBOARD) {
+        const w = size;
+        const h = size / 2.5;
+        ctx.fillStyle = color;
+        ctx.fillRect(x - w/2, y - h/2, w, h);
+        
+        ctx.strokeStyle = '#4B5563'; // Frame
+        ctx.lineWidth = 5;
+        ctx.strokeRect(x - w/2, y - h/2, w, h);
+        
+        ctx.shadowBlur = 0;
+        return;
+    }
     
     // Generic fallback for others
     ctx.fillStyle = color;
@@ -1407,7 +1545,7 @@ export default function App() {
           else if (entity.type === EntityType.STORE) drawStore(ctx, entity);
           else if (entity.type === EntityType.DORMITORY) drawDormitory(ctx, entity);
           else if (entity.type === EntityType.SWIMMING_POOL) drawPool(ctx, entity);
-          else if (['BED','TABLE','CHAIR','SHELF','FRIDGE','DESK','BACKPACK','WINDOW','POSTER','PLANT'].includes(entity.type)) drawFurniture(ctx, entity);
+          else if (['BED','TABLE','CHAIR','SHELF','FRIDGE','DESK','BACKPACK','WINDOW','POSTER','PLANT', 'BLACKBOARD'].includes(entity.type)) drawFurniture(ctx, entity);
           else if (['DOG','CAT','BIRD'].includes(entity.type)) drawAnimal(ctx, entity);
           else if (entity.id === 'portal_hallway') drawPortalHole(ctx, entity);
           else if (entity.id === 'door_my_dorm' || (entity.id === 'portal_playground' && currentSt.currentMapId === 'dorm_hallway')) drawDoor(ctx, entity); 
@@ -1423,7 +1561,7 @@ export default function App() {
       if (!playerDrawn) {
           drawSprite(ctx, { 
               id: 'player', type: EntityType.PLAYER, pos: playerRef.current, size: 20, color: '#8B5CF6', facing: facingRef.current 
-          }, true);
+              }, true);
       }
 
       if (currentSt.isNight) {
@@ -1462,7 +1600,7 @@ export default function App() {
 
       {gameState.isClassStarted && !gameState.isTeacherTransitioning && (
           <button 
-             onClick={handleDismissClass}
+             onClick={(e) => { e.stopPropagation(); handleDismissClass(); }}
              className="absolute bottom-4 right-4 bg-red-500 text-white px-4 py-2 rounded shadow hover:bg-red-600 font-bold"
           >
              下课
@@ -1485,6 +1623,7 @@ export default function App() {
                              setGameState(prev => ({ ...prev, isBackpackOpen: false, dialogue: { speaker: '旁白', text: '开始写作业...' } }));
                              playerRef.current = { x: 400, y: 380 };
                              facingRef.current = 'up';
+                             playSfx('success');
                          }}
                          className="p-2 bg-purple-100 rounded text-sm cursor-pointer hover:bg-purple-200 font-bold border-t mt-2"
                       >
@@ -1499,7 +1638,7 @@ export default function App() {
       <div className="absolute bottom-4 left-4 flex gap-2">
            {!gameState.isClassStarted && gameState.satAtDeskId && !gameState.isSchoolOver && (
                <button 
-                 onClick={handleStartClass}
+                 onClick={(e) => { e.stopPropagation(); handleStartClass(); }}
                  className="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 animate-bounce"
                >
                    上课
@@ -1515,6 +1654,7 @@ export default function App() {
           <div 
             onClick={(e) => {
                 e.stopPropagation();
+                playSfx('click');
                 setGameState(prev => ({ ...prev, dialogue: null }));
             }}
             className="absolute bottom-16 left-1/2 -translate-x-1/2 w-3/4 max-w-lg bg-white/95 border-2 border-slate-800 p-4 rounded-lg shadow-xl animate-fade-in-up cursor-pointer hover:bg-white"
