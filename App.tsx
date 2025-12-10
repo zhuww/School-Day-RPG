@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { GameState, MapData, Entity, EntityType, Point, Friend, Quiz } from './types';
+import { GameState, MapData, Entity, EntityType, Point, Friend, Quiz, Item } from './types';
 import { generateDialogue, generateSpeech } from './services/geminiService';
 import GameClock from './components/GameClock';
 
@@ -16,7 +16,7 @@ const TEACHERS: Record<string, any> = {
       name: '王老师', 
       color: '#FFFFFF', 
       subject: '语文',
-      voice: 'Aoede', // High pitch female
+      voice: 'Zephyr', // Soft female for gentle personality
       persona: '温柔知性，喜欢引用古诗词',
       visual: { hair: 'curly_brown', outfit: 'apron' }
   },
@@ -25,7 +25,7 @@ const TEACHERS: Record<string, any> = {
       name: '李老师', 
       color: '#2563EB', 
       subject: '数学',
-      voice: 'Kore', // Standard female
+      voice: 'Kore', // Standard female for strict personality
       persona: '严谨认真，注重逻辑',
       visual: { hair: 'long_black', outfit: 'normal' }
   },
@@ -34,7 +34,7 @@ const TEACHERS: Record<string, any> = {
       name: '张老师', 
       color: '#000000', 
       subject: '英语',
-      voice: 'Zephyr', // Soft female
+      voice: 'Aoede', // High pitch female for lively personality
       persona: '活泼开朗，喜欢唱歌',
       visual: { hair: 'short_black', outfit: 'skirt' }
   },
@@ -61,6 +61,13 @@ const STUDENT_TRAITS = [
     '爱睡觉',
     '追星族，喜欢讨论偶像',
     '科技迷，喜欢机器人'
+];
+
+const INITIAL_ITEMS: Item[] = [
+    { id: 'book_chinese', name: '语文课本', category: 'study', icon: '📕' },
+    { id: 'book_math', name: '数学课本', category: 'study', icon: '📘' },
+    { id: 'book_english', name: '英语课本', category: 'study', icon: '📗' },
+    { id: 'jump_rope', name: '跳绳', category: 'sport', icon: '➰' }
 ];
 
 const MAPS: Record<string, MapData> = {
@@ -240,8 +247,8 @@ CLASSROOM_ENTITIES.forEach((e, i) => {
        const npcId = `student_${i}`;
        // Use Random Trait for each student
        const trait = STUDENT_TRAITS[Math.floor(Math.random() * STUDENT_TRAITS.length)]; 
-       // Assign 'Puck' or 'Aoede' (High pitch) for children voices
-       const voice = i % 2 === 0 ? 'Puck' : 'Aoede'; 
+       // Assign 'Puck' (High pitch/Childlike) for children voices
+       const voice = 'Puck'; 
        
        MAPS['classroom'].entities.push({
            id: npcId,
@@ -273,7 +280,8 @@ const spawnRoommates = () => {
         const spot = targets[i];
         // Use Random Trait
         const trait = STUDENT_TRAITS[Math.floor(Math.random() * STUDENT_TRAITS.length)]; 
-        const voice = i % 2 === 0 ? 'Aoede' : 'Puck';
+        // Force 'Puck' for all children to sound like kids
+        const voice = 'Puck';
 
         MAPS['dorm_room'].entities.push({
             id: `roommate_${i}`,
@@ -295,8 +303,8 @@ spawnRoommates();
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const requestRef = useRef<number>();
-  const animationFrameRef = useRef<number>();
+  const requestRef = useRef<number>(0);
+  const animationFrameRef = useRef<number>(0);
   
   const [gameState, setGameState] = useState<GameState>({
     currentMapId: 'playground',
@@ -309,6 +317,7 @@ export default function App() {
     currentLesson: 'Chinese',
     selectedBook: null,
     isBackpackOpen: false,
+    inventory: [...INITIAL_ITEMS], // Initialize Inventory
     friends: [],
     isFriendListOpen: false,
     isClassStarted: false,
@@ -343,14 +352,14 @@ export default function App() {
   // --- AUDIO SYSTEM (SFX & TTS) ---
   const initAudio = () => {
     if (!audioContextRef.current) {
-         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
     }
     if (audioContextRef.current.state === 'suspended') {
         audioContextRef.current.resume();
     }
   };
 
-  const playSfx = (type: 'step' | 'click' | 'open' | 'close' | 'success') => {
+  const playSfx = (type: 'step' | 'click' | 'open' | 'close' | 'success' | 'door' | 'furniture' | 'backpack') => {
       if (!audioContextRef.current) initAudio();
       const ctx = audioContextRef.current!;
       const osc = ctx.createOscillator();
@@ -404,6 +413,30 @@ export default function App() {
               o.start(now + i*0.1);
               o.stop(now + i*0.1 + 0.5);
           });
+      } else if (type === 'door') {
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(150, now);
+          osc.frequency.exponentialRampToValueAtTime(50, now + 0.3);
+          gain.gain.setValueAtTime(0.05, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+          osc.start(now);
+          osc.stop(now + 0.3);
+      } else if (type === 'furniture') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(100, now);
+          osc.frequency.exponentialRampToValueAtTime(40, now + 0.1);
+          gain.gain.setValueAtTime(0.1, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+          osc.start(now);
+          osc.stop(now + 0.1);
+      } else if (type === 'backpack') {
+           osc.type = 'sawtooth';
+           osc.frequency.setValueAtTime(800, now);
+           osc.frequency.linearRampToValueAtTime(1200, now + 0.15);
+           gain.gain.setValueAtTime(0.05, now);
+           gain.gain.linearRampToValueAtTime(0, now + 0.15);
+           osc.start(now);
+           osc.stop(now + 0.15);
       }
   };
 
@@ -551,7 +584,7 @@ export default function App() {
            targetRef.current = null;
            return;
       }
-      playSfx('open');
+      playSfx('door');
       mapRef.current = MAPS[entity.targetMap];
       playerRef.current = { ...entity.targetPos };
       targetRef.current = null;
@@ -573,23 +606,43 @@ export default function App() {
     if (entity.type === EntityType.STORE) return;
     
     // Interactions that just show dialogue
-    if (entity.type === EntityType.SWIMMING_POOL || entity.type === EntityType.SHELF || entity.type === EntityType.FRIDGE) {
+    if (entity.type === EntityType.SWIMMING_POOL) {
         playSfx('click');
         targetRef.current = null;
-        let text = '';
-        if (entity.type === EntityType.SWIMMING_POOL) text = '泳池的水很清凉，在这里游泳真是一种放松。';
-        else if (entity.type === EntityType.SHELF) text = '你拿了一包零食放进书包。';
-        else text = '你拿了一瓶饮料放进书包。';
-        
         setGameState(prev => ({
             ...prev,
-            dialogue: { speaker: '旁白', text }
+            dialogue: { speaker: '旁白', text: '泳池的水很清凉，在这里游泳真是一种放松。' }
         }));
         return;
     }
 
+    // --- STORE INVENTORY INTERACTIONS ---
+    if (entity.type === EntityType.SHELF || entity.type === EntityType.FRIDGE) {
+        playSfx('furniture');
+        targetRef.current = null;
+        
+        let item: Item | null = null;
+        if (entity.name === '零食货架') item = { id: 'chips', name: '薯片', category: 'food', icon: '🥔' };
+        else if (entity.name === '面包货架') item = { id: 'bread', name: '面包', category: 'food', icon: '🍞' };
+        else if (entity.name === '饮料柜') {
+             item = Math.random() > 0.5 
+                ? { id: 'cola', name: '可乐', category: 'drink', icon: '🥤' }
+                : { id: 'water', name: '矿泉水', category: 'drink', icon: '💧' };
+        }
+
+        if (item) {
+            setGameState(prev => ({
+                ...prev,
+                inventory: [...prev.inventory, item!],
+                dialogue: { speaker: '旁白', text: `你拿了一份${item!.name}放进书包。` }
+            }));
+            playSfx('success');
+        }
+        return;
+    }
+
     if (entity.type === EntityType.BLACKBOARD) {
-        playSfx('click');
+        playSfx('furniture');
         targetRef.current = null;
         let text = '值日生把黑板擦得很干净。';
         if (gameState.isClassStarted) {
@@ -654,7 +707,8 @@ export default function App() {
       // 2. Fetch Audio (Wait for both to be ready)
       let audioData: string | null = null;
       if (['NPC', 'DOG', 'CAT', 'BIRD'].includes(entity.type)) {
-          const voice = entity.voiceName || 'Kore';
+          // Default to 'Puck' for children if not specified, to avoid adult sounding voices
+          const voice = entity.voiceName || (entity.subtype === 'child' ? 'Puck' : 'Kore');
           audioData = await generateSpeech(text, voice);
       }
 
@@ -681,7 +735,7 @@ export default function App() {
 
     if (entity.type === EntityType.DESK && !entity.isOccupied) {
       if (entity.id !== gameState.satAtDeskId) {
-          playSfx('success');
+          playSfx('furniture');
           playerRef.current = { x: entity.pos.x, y: entity.pos.y + 40 };
           setGameState(prev => ({ ...prev, satAtDeskId: entity.id, dialogue: null, facing: 'up' }));
           facingRef.current = 'up'; 
@@ -689,7 +743,7 @@ export default function App() {
       }
       return;
     } else if (entity.type === EntityType.DESK && entity.isOccupied) {
-      playSfx('click');
+      playSfx('furniture');
       setGameState(prev => ({ ...prev, dialogue: { speaker: '旁白', text: '这个座位已经有人了。' } }));
       targetRef.current = null;
       return;
@@ -698,13 +752,13 @@ export default function App() {
     if (entity.type === EntityType.BACKPACK) {
        targetRef.current = null;
        const nextState = !gameState.isBackpackOpen;
-       playSfx(nextState ? 'open' : 'close');
+       playSfx('backpack');
        setGameState(prev => ({ ...prev, isBackpackOpen: nextState }));
        return;
     }
 
     if (entity.type === EntityType.BED && entity.name === '我的床') {
-        playSfx('success');
+        playSfx('furniture');
         handleSleep();
         return;
     }
@@ -738,9 +792,24 @@ export default function App() {
           isMorningQueue: true,
           dialogue: { speaker: '芳芳', text: text },
           homeworkStatus: 'none',
-          isBackpackOpen: false
+          isBackpackOpen: false,
+          inventory: [...INITIAL_ITEMS] // Reset inventory or keep? Let's reset for fresh day or keep it? Keeping it feels more RPG. Let's keep it.
       }));
-      generateSpeech(text, 'Aoede').then(audio => audio && playAudio(audio));
+      generateSpeech(text, 'Puck').then(audio => audio && playAudio(audio));
+  };
+
+  const consumeItem = (item: Item, index: number) => {
+      playSfx('success');
+      // Remove item at index
+      const newInventory = [...gameState.inventory];
+      newInventory.splice(index, 1);
+      
+      const flavorText = item.category === 'food' ? '真好吃！' : '真解渴！';
+      setGameState(prev => ({
+          ...prev,
+          inventory: newInventory,
+          dialogue: { speaker: '旁白', text: `你使用了${item.name}。${flavorText}` }
+      }));
   };
 
   const switchLesson = (lesson: 'Chinese' | 'Math' | 'English' | 'PE') => {
@@ -1020,6 +1089,11 @@ export default function App() {
                     
                     if (state.behavior === 'stay' && npc.id.startsWith('teacher_')) {
                         npc.facing = 'down'; // Face class when arriving at podium
+                        
+                        // Automatic Lecture Trigger
+                        if (currentState.isClassStarted && !currentState.dialogue) {
+                             interact(npc);
+                        }
                     }
 
                     if (state.behavior === 'exit') {
@@ -1609,14 +1683,51 @@ export default function App() {
 
       {/* Backpack Modal */}
       {gameState.isBackpackOpen && (
-          <div className="absolute top-20 right-4 bg-white p-4 rounded shadow-lg border border-pink-300 w-48">
-              <h3 className="font-bold text-pink-600 mb-2 border-b">我的书包 (选择课程)</h3>
-              <div className="space-y-2">
-                  <div onClick={() => switchLesson('Chinese')} className="p-2 bg-red-100 rounded text-sm cursor-pointer hover:bg-red-200">语文课本 (上语文)</div>
-                  <div onClick={() => switchLesson('Math')} className="p-2 bg-blue-100 rounded text-sm cursor-pointer hover:bg-blue-200">数学课本 (上数学)</div>
-                  <div onClick={() => switchLesson('English')} className="p-2 bg-green-100 rounded text-sm cursor-pointer hover:bg-green-200">英语课本 (上英语)</div>
-                  <div onClick={() => switchLesson('PE')} className="p-2 bg-yellow-100 rounded text-sm cursor-pointer hover:bg-yellow-200">跳绳 (上体育)</div>
-                  
+          <div className="absolute top-20 right-4 bg-white p-4 rounded shadow-lg border border-pink-300 w-56 max-h-[400px] overflow-y-auto">
+              <h3 className="font-bold text-pink-600 mb-2 border-b flex justify-between">
+                  我的书包
+                  <button onClick={() => setGameState(prev => ({...prev, isBackpackOpen: false}))} className="text-gray-500">x</button>
+              </h3>
+              
+              <div className="space-y-4">
+                  <div>
+                      <h4 className="text-xs font-bold text-gray-500 mb-1">学习 & 运动</h4>
+                      <div className="space-y-1">
+                        {gameState.inventory.filter(i => ['study', 'sport'].includes(i.category)).map((item, idx) => (
+                            <div key={idx} 
+                                onClick={() => {
+                                    if(item.id === 'jump_rope') switchLesson('PE');
+                                    else if(item.id === 'book_chinese') switchLesson('Chinese');
+                                    else if(item.id === 'book_math') switchLesson('Math');
+                                    else if(item.id === 'book_english') switchLesson('English');
+                                }}
+                                className="p-2 bg-indigo-50 rounded text-sm cursor-pointer hover:bg-indigo-100 flex items-center gap-2"
+                            >
+                                <span>{item.icon}</span> {item.name}
+                            </div>
+                        ))}
+                      </div>
+                  </div>
+
+                  <div>
+                      <h4 className="text-xs font-bold text-gray-500 mb-1">零食 & 饮料</h4>
+                      <div className="space-y-1">
+                        {gameState.inventory.filter(i => ['food', 'drink'].includes(i.category)).length === 0 && <div className="text-xs text-gray-400 italic">空空如也</div>}
+                        {gameState.inventory.map((item, idx) => {
+                            if (!['food', 'drink'].includes(item.category)) return null;
+                            return (
+                                <div key={idx} 
+                                    onClick={() => consumeItem(item, idx)}
+                                    className="p-2 bg-green-50 rounded text-sm cursor-pointer hover:bg-green-100 flex items-center gap-2"
+                                >
+                                    <span>{item.icon}</span> {item.name}
+                                    <span className="text-[10px] text-gray-400 ml-auto">食用</span>
+                                </div>
+                            );
+                        })}
+                      </div>
+                  </div>
+
                   {gameState.currentMapId === 'dorm_room' && (
                       <div 
                          onClick={() => {
@@ -1625,9 +1736,9 @@ export default function App() {
                              facingRef.current = 'up';
                              playSfx('success');
                          }}
-                         className="p-2 bg-purple-100 rounded text-sm cursor-pointer hover:bg-purple-200 font-bold border-t mt-2"
+                         className="p-2 bg-purple-100 rounded text-sm cursor-pointer hover:bg-purple-200 font-bold border-t mt-2 text-center"
                       >
-                          写作业
+                          ✏️ 写作业
                       </div>
                   )}
               </div>

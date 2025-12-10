@@ -13,24 +13,28 @@ const audioCache = new Map<string, string>();
 // Fallback lines for offline mode or quota exceeded
 const FALLBACK_LINES: Record<string, string[]> = {
   'teacher_chinese': [
-    "（温柔）同学，要多读书，书里有黄金屋哦。",
-    "（微笑）字如其人，写字要一笔一划。",
-    "（提醒）上课要专心，不要走神。"
+    "（温柔）同学们，‘读书破万卷，下笔如有神’，今天要多读几页书哦。",
+    "（提问）大家知道‘春眠不觉晓’描写的是哪个季节吗？",
+    "（讲解）写字的时候要心静，横平竖直，字如其人。",
+    "（鼓励）这篇作文写得真生动，继续加油！"
   ],
   'teacher_math': [
-    "（推眼镜）数学很有趣，生活处处是数学。",
-    "（严肃）计算要仔细，小数点不能点错。",
-    "（鼓励）不懂就问，老师很喜欢爱提问的同学。"
+    "（推眼镜）数学是思维的体操，大家做题要细心。",
+    "（提问）谁能告诉我，三角形的内角和是多少度？",
+    "（讲解）计算的时候小数点要对齐，不可以马虎。",
+    "（严谨）逻辑要清晰，一步一步推导才能得出正确答案。"
   ],
   'teacher_english': [
-    "（活泼）Hello! How are you today?",
-    "（指着卡片）Apple! A-P-P-L-E.",
-    "（轻松）Don't be shy, speak up!"
+    "（活泼）Good morning class! How are you today?",
+    "（提问）Can you tell me what color this is? Yes, it's red!",
+    "（鼓励）Don't be shy! Speak out loud! 大声读出来！",
+    "（唱歌）Let's sing the ABC song together! A B C D..."
   ],
   'teacher_pe': [
-    "（大声）身体健康最重要！多运动！",
-    "（拍手）集合！动作快一点！",
-    "（鼓励）坚持就是胜利，再跑一圈！"
+    "（大声）集合！向右看齐！精神饱满一点！",
+    "（口令）一二一，一二一！脚步跟上节奏！",
+    "（强调）身体是革命的本钱，多运动才能不生病！",
+    "（示范）看我看我，深蹲要做到位，背挺直！"
   ],
   'ra_npc': [
     "（关心）天冷了，记得多穿件衣服，别着凉了。",
@@ -82,17 +86,17 @@ export const generateDialogue = async (
   if (type === 'BIRD') return "叽叽喳喳";
 
   // Check Cache
-  const cacheKey = `dialogue_${npcId}_${isLecture}`;
-  if (dialogueCache.has(cacheKey)) {
+  const cacheKey = `dialogue_${npcId}_${isLecture}_${subject}`;
+  if (dialogueCache.has(cacheKey) && Math.random() > 0.3) { // 30% chance to regenerate to keep lectures fresh
       return dialogueCache.get(cacheKey)!;
   }
 
   // Fallback Logic for Lectures if API fails
   const getLectureFallback = () => {
-      if (subject === '语文') return "同学们，'春眠不觉晓'这首诗描绘了春天的早晨。";
-      if (subject === '数学') return "大家看，1+1等于2，这是数学的基础。";
-      if (subject === '英语') return "Follow me: Good Morning!";
-      if (subject === '体育') return "伸展运动，一二三四，二二三四！";
+      if (subject === '语文') return "同学们，谁能背诵《静夜思》？";
+      if (subject === '数学') return "大家算一算，5加7等于多少？";
+      if (subject === '英语') return "Class, what is your name?";
+      if (subject === '体育') return "伸展运动，开始！一二三四！";
       return "同学们，请看黑板。";
   };
 
@@ -104,10 +108,11 @@ export const generateDialogue = async (
       if (isLecture && subject) {
           prompt = `
             Roleplay: Primary school teacher (${subject}).
-            Context: Giving a lecture.
-            Task: Say ONE short sentence explaining a simple concept in ${subject}.
+            Context: Giving a lecture in class.
+            Task: Teach a very brief concept and ASK THE STUDENT A SIMPLE QUESTION about it to interact.
             Language: Simplified Chinese.
-            Length: Max 20 words.
+            Length: Max 25 words.
+            Tone: Encouraging and educational.
           `;
       } else if (persona && type === 'NPC') {
           prompt = `

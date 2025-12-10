@@ -30,6 +30,13 @@ export enum EntityType {
   BLACKBOARD = 'BLACKBOARD'
 }
 
+export interface Item {
+  id: string;
+  name: string;
+  category: 'study' | 'food' | 'drink' | 'sport';
+  icon?: string;
+}
+
 export interface Entity {
   id: string;
   type: EntityType;
@@ -100,6 +107,7 @@ export interface GameState {
   currentLesson: 'Chinese' | 'Math' | 'English' | 'PE';
   selectedBook: string | null;
   isBackpackOpen: boolean;
+  inventory: Item[]; // New Inventory System
   friends: Friend[];
   isFriendListOpen: boolean;
   isClassStarted: boolean;
